@@ -124,6 +124,232 @@ python serve_spa.py
 
 ---
 
+## 部署指南（安装 / 部署 / 备份 / 迁移）
+
+> 适用对象：把 EigerCore 部署到一台干净的服务器 / 云主机 / 面板环境。
+>
+> **核心三步**：① 装 Python 依赖 → ② 初始化数据库（`instance/links.db`）→ ③ 以生产方式启动（gunicorn）并用 Nginx / 面板反代到 80/443。
+>
+> 工作台是 Vue 3 单页应用（SPA），需提前构建 `web/dist`。可在**本机构建后上传**，也可在**服务器上构建**（需 Node.js 18+）。
+
+### 0. 前置条件
+
+| 项目 | 要求 | 说明 |
+| --- | --- | --- |
+| Python | 3.8+（推荐 3.11 / 3.12） | 仅标准库 + Flask 全家桶 |
+| pip | 随 Python 自带 | 安装 `requirements.txt` |
+| Node.js | 18+（仅构建前端时需要） | 用 `npm run build` 生成 `web/dist` |
+| 反向代理 | Nginx / 面板自带 Nginx | 把公网 80/443 转发到本地 5000 |
+| 数据库 | 无需额外服务 | 默认 SQLite（单文件，已内置） |
+
+> 生产 Web 服务器强烈建议用 **gunicorn**（性能好、可守护）。如未安装：`pip install gunicorn`。
+> 开发自测可临时用 `python serve_spa.py`（Flask 自带服务器），但**不要用于生产**。
+
+---
+
+### 1. 安装（取代码 + 依赖 + 建库）
+
+以下通用步骤**所有环境都要先执行**：
+
+```bash
+# 1) 获取代码（或从本机把整个目录上传到服务器）
+git clone https://github.com/praming/EigerCore.git
+cd EigerCore
+
+# 2) 创建并激活虚拟环境（强烈建议，避免污染系统 Python）
+python -m venv venv
+source venv/bin/activate          # Linux / macOS
+# venv\Scripts\activate           # Windows
+
+# 3) 安装依赖
+pip install -r requirements.txt
+
+# 4) 初始化数据库（生成 instance/links.db 及表结构；已存在则增量迁移，不丢数据）
+python init_db.py
+```
+
+**构建前端工作台（任选其一）**：
+
+- **本机构建后上传（推荐、服务器最省事）**：在开发机执行 `cd web && npm install && npm run build`，把生成的整个 `web/dist` 目录上传到服务器对应 `web/dist`。
+- **服务器上构建**：服务器装好 Node 18+ 后执行 `cd web && npm install && npm run build`。
+
+> 只要 `web/dist/index.html` 存在，并以 `USE_SPA=1` 启动，访问站点即进入工作台；若 `web/dist` 缺失，会自动回退到原 Jinja 导航页（不会崩）。
+
+---
+
+### 2. 部署
+
+无论哪种方式，生产启动的本质都是同一句：
+
+```
+USE_SPA=1 gunicorn -w 2 -b 127.0.0.1:5000 serve_spa:app
+```
+
+- `serve_spa:app`：模块 `serve_spa.py` 暴露的 Flask `app`（它内部已设 `USE_SPA=1`）。
+- `-w 2`：2 个工作进程（SQLite 单文件足够；CPU 核多可加到 3~4）。
+- `-b 127.0.0.1:5000`：只监听本机回环，由 Nginx / 面板反代对外。
+
+#### 2.1 通用 / 裸机（systemd + gunicorn + Nginx）
+
+**① 用 systemd 托管 gunicorn** —— 新建 `/etc/systemd/system/eigercore.service`：
+
+```ini
+[Unit]
+Description=EigerCore Workbench
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/EigerCore
+Environment=SECRET_KEY=换成一段足够随机的长字符串
+Environment=USE_SPA=1
+ExecStart=/opt/EigerCore/venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 serve_spa:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now eigercore
+sudo systemctl status eigercore      # 确认 active (running)
+```
+
+**② 配置 Nginx 反代** —— 新建 `/etc/nginx/conf.d/eigercore.conf`：
+
+```nginx
+server {
+    listen 80;
+    server_name your.domain.com;          # 改成你的域名
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> 如需在应用层正确拿到客户端真实 IP / 协议，可在 `app/__init__.py` 给 app 加 `from werkzeug.middleware.proxy_fix import ProxyFix; app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)`（详见 FAQ）。
+
+**③ HTTPS**：用 Let's Encrypt 免费证书（`certbot --nginx`），或在面板 / CDN 处签发后回源 80。
+
+#### 2.2 宝塔面板
+
+1. **装软件**：「软件商店」安装 **Python 项目（Python 项目管理器）** 与 **Nginx**。
+2. **建站点**：「网站 → 添加站点」，填域名，PHP 版本选「纯静态」（我们只在面板里借用它的 Nginx 反代）。
+3. **部署 Python 项目**：「Python 项目 → 添加项目」：
+   - 项目路径：`/www/wwwroot/EigerCore`（上传代码处）
+   - Python 版本：选 3.8+
+   - 框架：**Flask**
+   - 启动文件：`serve_spa.py`
+   - 启动命令：`gunicorn -w 2 -b 127.0.0.1:5000 serve_spa:app`
+   - 端口：`5000`
+   - 勾选「开机启动」
+   - 「环境变量」里加：`SECRET_KEY=随机串`、`USE_SPA=1`
+   - 保存并启动
+4. **反代**：进该站点「设置 → 反向代理 → 添加反代」，目标 URL 填 `http://127.0.0.1:5000`，发送域名 `$host`；保存后访问域名即进入工作台。
+5. **前端**：服务器「终端」进 `/www/wwwroot/EigerCore/web` 执行 `npm install && npm run build`（需先在系统里装好 Node 18+）；或直接把本机构建好的 `web/dist` 上传覆盖。
+6. **HTTPS**：站点「SSL」申请证书并强制 HTTPS。
+
+#### 2.3 1Panel 面板
+
+1. **运行环境**：「网站 → 运行环境」创建 Python 运行环境（选 3.8+，面板自动装好 pip / gunicorn）。
+2. **建站**：「网站 → 创建网站（Python）」：
+   - 主目录：`/opt/EigerCore`（上传代码处）
+   - 运行环境：选上一步创建的环境
+   - 应用端口：`5000`
+   - 启动文件 / 模块：`serve_spa:app`
+   - 启动命令：`gunicorn -w 2 -b 0.0.0.0:5000 serve_spa:app`
+   - 高级设置加环境变量：`SECRET_KEY=随机串`、`USE_SPA=1`
+   - 确认创建并启动（1Panel 会自动生成 Nginx 反代）
+3. **前端**：「终端」进 `web` 目录执行 `npm install && npm run build`；或上传本机构建好的 `web/dist`。
+4. **HTTPS**：站点「证书」绑定并开启 HTTPS 强制跳转。
+
+> 各面板 UI 文案随版本略有差异，但核心三要素一致：**启动模块 `serve_spa:app` + 端口 `5000` + 环境变量 `USE_SPA=1` 与 `SECRET_KEY`**，再把 Nginx 反代到 `127.0.0.1:5000`。
+
+---
+
+### 3. 备份
+
+备份只需三类文件（全部位于项目目录内）：
+
+| 内容 | 路径 | 说明 |
+| --- | --- | --- |
+| 数据库 | `instance/links.db` | 全部账号、链接、分组、工作台配置（SQLite 单文件，复制即备份） |
+| 前端产物 | `web/dist/` | SPA 构建结果；保留源码可不备份，重建即可 |
+| 配置 / 密钥 | `.env` 或环境变量 / `app/config.py` | `SECRET_KEY`、数据库路径等；**务必单独安全保存 SECRET_KEY** |
+
+**每日自动全量备份脚本（示例 `backup.sh`）**：
+
+```bash
+#!/bin/bash
+set -e
+SRC=/opt/EigerCore
+BAK=/backup/eigercore/$(date +%F)
+mkdir -p "$BAK"
+# SQLite 单文件；停服再拷可 100% 避免写一半，不停服直接拷通常也安全
+cp "$SRC/instance/links.db" "$BAK/links.db"
+cp -r "$SRC/web/dist"       "$BAK/dist"
+chmod -R 600 "$BAK"
+echo "backup done: $BAK"
+```
+
+加入定时任务：
+
+```bash
+# crontab -e
+0 3 * * * /opt/EigerCore/backup.sh >> /var/log/eigercore-backup.log 2>&1
+```
+
+> **安全提示**：`links.db` 含密码哈希与所有个人数据，备份文件请放在非公开目录并收紧权限（`chmod 600`），不要随代码库提交。
+
+---
+
+### 4. 迁移（换服务器 / 升级 / 数据搬家）
+
+**场景 A：整机迁移（换服务器，保留全部数据）**
+
+1. 旧服务器：按「3. 备份」打包 `instance/links.db` + `web/dist`，并记录 `SECRET_KEY`、Python / Node 版本。
+2. 新服务器：执行「1. 安装」完成依赖与目录结构；把备份的 `instance/links.db` 放回 `instance/`，`web/dist` 放回 `web/`。
+3. 用**相同 `SECRET_KEY`** 启动（否则已有会话 / CSRF 令牌全部失效，用户需重新登录——数据本身不丢）。
+4. 按「2. 部署」任一方式启动 + 反代。
+
+**场景 B：版本升级（拉取新代码）**
+
+```bash
+cd /opt/EigerCore
+git pull
+source venv/bin/activate
+pip install -r requirements.txt        # 如有新增依赖
+python init_db.py                      # 增量迁移，补齐新表/列，不丢数据
+cd web && npm install && npm run build # 重建前端
+# 重启服务：systemd → systemctl restart eigercore；面板 → 在面板点重启
+```
+
+**场景 C：从 SQLite 换数据库（可选）**
+
+默认 SQLite 已满足个人使用。如需换 Postgres / MySQL，修改 `app/config.py` 的 `SQLALCHEMY_DATABASE_URI` 并执行 `python init_db.py` 重新建表，再用数据库自带工具把数据导入（如 `sqlite3 ... .dump` 后适配 SQL，或用 ETL 工具）。
+
+---
+
+### 5. 部署常见问题
+
+- **502 / 站点打不开**：先 `curl 127.0.0.1:5000` 确认 gunicorn 在跑；再看 Nginx 反代目标是否为 `127.0.0.1:5000`；检查 `SECRET_KEY` / `USE_SPA` 是否注入。
+- **工作台白屏但 `/login` 正常**：多半是 `web/dist` 没构建或路径不对；确认 `web/dist/index.html` 存在，且以 `USE_SPA=1` 启动。
+- **改了代码不生效**：gunicorn 需重启（`systemctl restart` / 面板重启）；SPA 改动需重新 `npm run build`。
+- **忘记 `SECRET_KEY`**：可重置，但所有用户会话会失效、需重新登录；数据不受影响。
+
+---
+
 ## 使用说明
 
 1. **注册 / 登录**：首次打开会跳转到登录页，点击「去注册」创建账号；登录后进入**工作台**。

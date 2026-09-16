@@ -658,7 +658,7 @@
     .logo-mark svg { width: 1.15rem; height: 1.15rem; }
     /* 站点品牌：自定义文字与副标题（系统设置） */
     .brand-text { display: flex; flex-direction: column; line-height: 1.05; min-width: 0; }
-    .brand-name { font-weight: 800; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .brand-name { font-weight: 800; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; padding-bottom: .12em; }
     .brand-sub { font-size: .66rem; font-weight: 600; color: hsl(var(--bc) / .55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* 自定义 logo 图片：覆盖渐变底色与阴影，保持 2rem 方形象限 */
     .logo-mark--img { background: none; box-shadow: none; padding: 0; object-fit: contain; }
