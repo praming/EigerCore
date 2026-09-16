@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted, nextTick } from 'vue'
+import { computed, ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import Sortable from 'sortablejs'
 import {
   useWorkbenchStore,
@@ -155,6 +155,8 @@ const dcDate = ref('') // once: YYYY-MM-DD
 const dcMonth = ref(1) // yearly
 const dcDay = ref(1) // yearly / monthly
 const dcWday = ref(0) // weekly 0-6
+const dcLmonth = ref(1) // lunar: 农历月 1-12
+const dcLday = ref(1) // lunar: 农历日 1-30
 const dcHasColor = ref(false)
 const dcColor = ref('#f59e0b')
 const dcEditingId = ref<number | null>(null)
@@ -164,9 +166,11 @@ const dcRepeatOpts = [
   { label: '每年重复（如生日）', value: 'yearly' },
   { label: '每月重复（如还款日）', value: 'monthly' },
   { label: '每周重复（如健身日）', value: 'weekly' },
+  { label: '每年农历重复（如农历生日）', value: 'lunar' },
 ]
 const dcMonthOpts = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`, value: i + 1 }))
 const dcDayOpts = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1} 日`, value: i + 1 }))
+const dcLdayOpts = Array.from({ length: 30 }, (_, i) => ({ label: `${i + 1} 日`, value: i + 1 }))
 const dcWdayOpts = ['日', '一', '二', '三', '四', '五', '六'].map((d, i) => ({ label: `周${d}`, value: i }))
 
 function buildDc(): Omit<DayCountEvent, 'id'> {
@@ -181,6 +185,10 @@ function buildDc(): Omit<DayCountEvent, 'id'> {
     base.day = dcDay.value
   } else if (dcRepeat.value === 'monthly') base.day = dcDay.value
   else if (dcRepeat.value === 'weekly') base.wday = dcWday.value
+  else if (dcRepeat.value === 'lunar') {
+    base.lmonth = dcLmonth.value
+    base.lday = dcLday.value
+  }
   return base as Omit<DayCountEvent, 'id'>
 }
 
@@ -203,6 +211,8 @@ function resetDc() {
   dcMonth.value = 1
   dcDay.value = 1
   dcWday.value = 0
+  dcLmonth.value = 1
+  dcLday.value = 1
   dcHasColor.value = false
   dcColor.value = '#f59e0b'
 }
@@ -215,6 +225,8 @@ function editDc(e: DayCountEvent) {
   dcMonth.value = e.month || 1
   dcDay.value = e.day || 1
   dcWday.value = e.wday ?? 0
+  dcLmonth.value = e.lmonth || 1
+  dcLday.value = e.lday || 1
   dcHasColor.value = !!e.color
   dcColor.value = e.color || '#f59e0b'
 }
@@ -1129,6 +1141,10 @@ function onWcDragEnd() {
           </template>
           <template v-else-if="dcRepeat === 'weekly'">
             <div class="wb-row"><label>星期</label><WbSelect :options="dcWdayOpts" :model-value="dcWday" @update:model-value="(v) => (dcWday = v as number)" /></div>
+          </template>
+          <template v-else-if="dcRepeat === 'lunar'">
+            <div class="wb-row"><label>农历月</label><WbSelect :options="dcMonthOpts" :model-value="dcLmonth" @update:model-value="(v) => (dcLmonth = v as number)" /></div>
+            <div class="wb-row"><label>农历日</label><WbSelect :options="dcLdayOpts" :model-value="dcLday" @update:model-value="(v) => (dcLday = v as number)" /></div>
           </template>
           <div class="wb-row" style="align-items:center">
             <label>强调色</label>

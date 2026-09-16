@@ -1,6 +1,8 @@
 // 公历 → 农历 转换（1900–2100，经典 lunarInfo 算法）
 // 仅用于前端展示，精度满足日常日历需求。
 
+import { Lunar } from 'lunar-javascript'
+
 const lunarInfo = [
   0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,
   0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977,
@@ -140,5 +142,31 @@ export function solarToLunar(y: number, m: number, d: number): LunarDate {
     ganzhiYear,
     zodiac,
     term,
+  }
+}
+
+/** 农历月日 → 中文文案，如 lunarMdText(1, 1) = '正月初一' */
+export function lunarMdText(m: number, d: number): string {
+  const mm = Math.min(12, Math.max(1, m))
+  const dd = Math.min(30, Math.max(1, d))
+  return `${monthCN[mm - 1]}月${dayCN[dd - 1]}`
+}
+
+/**
+ * 农历(月,日) → 公历日期（给定公历年上下文）。
+ * 用于倒数日「每年农历重复」：lunar-javascript 离线计算，覆盖 1900–2100。
+ * 返回 null 表示该农历日期在指定农历年不存在（如非闰年的闰月）。
+ */
+export function lunarToSolarYmd(
+  lm: number,
+  ld: number,
+  solarYear: number
+): { y: number; m: number; d: number } | null {
+  try {
+    const lunar = Lunar.fromYmd(solarYear, lm, ld)
+    const s = lunar.getSolar()
+    return { y: s.getYear(), m: s.getMonth(), d: s.getDay() }
+  } catch {
+    return null
   }
 }

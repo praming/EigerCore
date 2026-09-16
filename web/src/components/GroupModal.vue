@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import type { CardStyle, GroupFormInput, TitleFontSize } from '@/types/api'
 import AppModal from './AppModal.vue'
+import WbSwitch from './WbSwitch.vue'
+import WbSelect from './WbSelect.vue'
 
 /**
  * 新建 / 编辑分组弹窗 —— 复刻 dashboard.html 的 #group-modal。
@@ -35,6 +37,19 @@ const MAXLEN_OPTIONS = [
   { value: 16, label: '16 字' },
   { value: 20, label: '20 字' },
 ]
+
+const cardStyleOptions: { value: CardStyle; label: string }[] = [
+  { value: 'card', label: '横排卡片（图标在左，标题 / 备注在右）' },
+  { value: 'link', label: '矩形卡片（图标方块在上、标题在下，悬停显示备注）' },
+]
+
+// 列数下拉选项（分组视图 / 总览视图共用）：随卡片样式动态变化
+const colsOpt = computed(() => colsOptions.value.map((n) => ({ value: n, label: `${n} 个 / 行` })))
+
+function onCardStyleChange(v: string | number) {
+  cardStyle.value = v as CardStyle
+  onStyleChange()
+}
 
 const name = ref('')
 const icon = ref('')
@@ -155,25 +170,18 @@ async function onSubmit() {
 
       <label class="form-control w-full my-2">
         <span class="label-text">卡片样式（该分组下链接的展示方式）</span>
-        <select v-model="cardStyle" class="select w-full" @change="onStyleChange">
-          <option value="card">横排卡片（图标在左，标题 / 备注在右）</option>
-          <option value="link">矩形卡片（图标方块在上、标题在下，悬停显示备注）</option>
-        </select>
+        <WbSelect :model-value="cardStyle" :options="cardStyleOptions" @update:modelValue="onCardStyleChange" class="w-full" />
         <small class="text-muted">背景色、标题颜色等卡片设置项不受样式影响，两种样式通用。</small>
       </label>
 
       <label class="form-control w-full my-2">
         <span class="label-text">分组视图每行显示数量{{ colsSuffix }}</span>
-        <select v-model.number="colsNav" class="select w-full">
-          <option v-for="n in colsOptions" :key="n" :value="n">{{ n }} 个 / 行</option>
-        </select>
+        <WbSelect :model-value="colsNav" :options="colsOpt" @update:model-value="(v) => (colsNav = v as number)" class="w-full" />
       </label>
 
       <label class="form-control w-full my-2">
         <span class="label-text">总览视图每行显示数量{{ colsSuffix }}</span>
-        <select v-model.number="colsOv" class="select w-full">
-          <option v-for="n in colsOptions" :key="n" :value="n">{{ n }} 个 / 行</option>
-        </select>
+        <WbSelect :model-value="colsOv" :options="colsOpt" @update:model-value="(v) => (colsOv = v as number)" class="w-full" />
         <small class="text-muted"
           >总览视图（单页展示全部分组）可单独设置每行数量，与上方分组视图互不干扰。</small
         >
@@ -181,24 +189,17 @@ async function onSubmit() {
 
       <label class="form-control w-full my-2">
         <span class="label-text">标题字号</span>
-        <select v-model="fs" class="select w-full">
-          <option v-for="o in FS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
+        <WbSelect v-model="fs" :options="FS_OPTIONS" class="w-full" />
       </label>
 
       <label class="form-control w-full my-2">
         <span class="label-text">标题最大字符数（超出截断，0 为不限制）</span>
-        <select v-model.number="maxLen" class="select w-full">
-          <option v-for="o in MAXLEN_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
+        <WbSelect :model-value="maxLen" :options="MAXLEN_OPTIONS" @update:model-value="(v) => (maxLen = v as number)" class="w-full" />
       </label>
 
       <div class="flex items-center justify-between my-2 px-1">
         <span class="label-text">显示标题（关闭后卡片仅显示图标）</span>
-        <label class="toggle">
-          <input v-model="showTitle" type="checkbox" value="1" />
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </label>
+        <WbSwitch v-model="showTitle" />
       </div>
 
       <label class="form-control w-full my-2">

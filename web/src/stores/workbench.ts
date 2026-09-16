@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { reactive, ref, computed, watch, nextTick } from 'vue'
 import { workbenchApi, type BiddingSource, type WorkbenchStateDTO, type HotlistSource, type HotlistProvider } from '@/api/workbench'
 import { useAuthStore } from './auth'
+import { lunarToSolarYmd, lunarMdText } from '@/utils/lunar'
 
 /** 工作台网格列数（用户已选定 9 列） */
 export const GRID_COLS = 9
@@ -24,7 +25,7 @@ export interface CountdownTarget {
 }
 
 /** 倒数日事件重复方式 */
-export type DayCountRepeat = 'once' | 'yearly' | 'monthly' | 'weekly'
+export type DayCountRepeat = 'once' | 'yearly' | 'monthly' | 'weekly' | 'lunar'
 
 /** 倒数日事件：可添加多个，支持单次/每年/每月/每周重复 */
 export interface DayCountEvent {
@@ -35,6 +36,8 @@ export interface DayCountEvent {
   month?: number // yearly: 1-12
   day?: number // yearly / monthly: 1-31
   wday?: number // weekly: 0-6（0=周日）
+  lmonth?: number // lunar: 农历月 1-12
+  lday?: number // lunar: 农历日 1-30
   color?: string // 可选强调色（十六进制）
 }
 
@@ -68,6 +71,19 @@ export function nextDayCountDate(
     const diff = (ev.wday - base.getDay() + 7) % 7
     target = new Date(base)
     target.setDate(base.getDate() + diff)
+  } else if (ev.repeat === 'lunar' && ev.lmonth && ev.lday) {
+    // 每年农历重复：在「本年/明年」两个农历年上下文里取最早的公历命中（农历年约覆盖前后 ~13 个月）
+    let cand: Date | null = null
+    for (const y of [base.getFullYear(), base.getFullYear() + 1]) {
+      const s = lunarToSolarYmd(ev.lmonth, ev.lday, y)
+      if (!s) continue
+      const t = new Date(s.y, s.m - 1, s.d)
+      if (t >= base) {
+        cand = t
+        break
+      }
+    }
+    target = cand
   }
   if (!target) return { target: null, days: 0, overdue: false }
   const days = Math.round((target.getTime() - base.getTime()) / 86400000)
@@ -86,6 +102,8 @@ export function describeDayCount(ev: DayCountEvent): string {
       return `每月 ${ev.day} 日`
     case 'weekly':
       return `每${wk[ev.wday ?? 0]}`
+    case 'lunar':
+      return `每年农历${lunarMdText(ev.lmonth ?? 1, ev.lday ?? 1)}`
   }
 }
 

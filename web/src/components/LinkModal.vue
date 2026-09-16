@@ -8,6 +8,7 @@ import AppIcon from './AppIcon.vue'
 import ColorPicker, { type Swatch } from './ColorPicker.vue'
 import IconUploader from './IconUploader.vue'
 import IconPicker from './IconPicker.vue'
+import WbSelect from './WbSelect.vue'
 
 /**
  * 新增 / 编辑链接弹窗 —— 复刻 dashboard.html 的 #link-modal。
@@ -238,11 +239,13 @@ async function onSubmit() {
 
       <label class="form-control w-full my-2">
         <span class="label-text">分组</span>
-        <select v-model.number="groupId" class="select w-full">
-          <option v-for="o in store.groupOptions" :key="o.value" :value="o.value">
-            {{ o.label }}
-          </option>
-        </select>
+        <WbSelect
+          :model-value="groupId"
+          :options="store.groupOptions"
+          placeholder="选择分组"
+          @update:model-value="(v) => (groupId = v as number)"
+          class="w-full"
+        />
       </label>
 
       <div class="modal-action">

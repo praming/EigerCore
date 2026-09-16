@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import WbCard from '../WbCard.vue'
 import AppIcon from '../AppIcon.vue'
 import AppModal from '../AppModal.vue'
+import WbSelect from '../WbSelect.vue'
 import LineChart from './LineChart.vue'
 import { workbenchApi, type WeatherInfo, type SunDay, qweatherIconToLucide } from '@/api/workbench'
 import { useWorkbenchStore } from '@/stores/workbench'
@@ -154,6 +155,16 @@ function weekRanges(year: number) {
 }
 // 只保留「起始日不晚于今天」的周，避免下拉出现纯未来的周（无数据）
 const weekOptions = computed(() => weekRanges(selYear.value).filter((w) => w.start <= _today))
+
+// 太阳弹窗下拉框选项（原生 select 改为美化 WbSelect）
+const yearOpts = computed(() => yearOptions.value.map((y) => ({ value: y, label: `${y} 年` })))
+const monthOpts = computed(() => monthOptions.map((m) => ({ value: m, label: `${m} 月` })))
+const weekOpts = computed(() =>
+  weekOptions.value.map((wk) => ({
+    value: wk.n,
+    label: `第${wk.n}周 ${wk.start.getMonth() + 1}/${wk.start.getDate()}–${wk.end.getMonth() + 1}/${wk.end.getDate()}`,
+  }))
+)
 
 // 默认选中「包含今天的周」
 function currentWeekIndex(): number {
@@ -627,17 +638,29 @@ onUnmounted(() => {
       </div>
 
       <div class="wb-sun__pickers">
-        <select class="wb-sun__sel" v-model.number="selYear" :disabled="sunLoading">
-          <option v-for="y in yearOptions" :key="y" :value="y">{{ y }} 年</option>
-        </select>
-        <select v-if="sunView !== 'year'" class="wb-sun__sel" v-model.number="selMonth" :disabled="sunLoading">
-          <option v-for="m in monthOptions" :key="m" :value="m">{{ m }} 月</option>
-        </select>
-        <select v-if="sunView === 'week'" class="wb-sun__sel" v-model.number="selWeek" :disabled="sunLoading">
-          <option v-for="wk in weekOptions" :key="wk.n" :value="wk.n">
-            第{{ wk.n }}周 {{ wk.start.getMonth() + 1 }}/{{ wk.start.getDate() }}–{{ wk.end.getMonth() + 1 }}/{{ wk.end.getDate() }}
-          </option>
-        </select>
+        <WbSelect
+          class="wb-sun__sel"
+          :model-value="selYear"
+          :options="yearOpts"
+          :disabled="sunLoading"
+          @update:model-value="(v) => (selYear = v as number)"
+        />
+        <WbSelect
+          v-if="sunView !== 'year'"
+          class="wb-sun__sel"
+          :model-value="selMonth"
+          :options="monthOpts"
+          :disabled="sunLoading"
+          @update:model-value="(v) => (selMonth = v as number)"
+        />
+        <WbSelect
+          v-if="sunView === 'week'"
+          class="wb-sun__sel"
+          :model-value="selWeek"
+          :options="weekOpts"
+          :disabled="sunLoading"
+          @update:model-value="(v) => (selWeek = v as number)"
+        />
       </div>
 
       <div v-if="sunError" class="wb-sun__err">{{ sunError }}</div>
@@ -939,29 +962,12 @@ onUnmounted(() => {
 .wb-sun__sel {
   flex: 1;
   min-width: 0;
-  appearance: none; -webkit-appearance: none; -moz-appearance: none;
-  border: 0.5px solid var(--color-border-tertiary, rgba(0, 0, 0, 0.18));
-  border-radius: 9px;
-  padding: 9px 30px 9px 11px;
+}
+.wb-sun__sel .select-trigger {
+  width: 100%;
   font-size: 13px;
-  background-color: var(--color-background-primary, #fff);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 14px 14px;
-  color: var(--text-base, #1f2937);
-  cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
-.wb-sun__sel:hover:not(:disabled) {
-  border-color: rgba(245, 158, 11, 0.55);
-}
-.wb-sun__sel:focus {
-  outline: none;
-  border-color: hsl(var(--p, 210 90% 50%) / 0.5);
-  box-shadow: 0 0 0 3px hsl(var(--p, 210 90% 50%) / 0.14);
-}
-.wb-sun__sel:disabled {
+.wb-sun__sel.is-disabled .select-trigger {
   opacity: 0.6;
   cursor: not-allowed;
 }

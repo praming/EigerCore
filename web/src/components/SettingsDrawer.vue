@@ -5,6 +5,7 @@ import { adminApi } from '@/api'
 import AppModal from './AppModal.vue'
 import ThemePicker from './ThemePicker.vue'
 import AppIcon from './AppIcon.vue'
+import WbSwitch from './WbSwitch.vue'
 import type { CustomThemeDTO, UserDTO, ApiError } from '@/types/api'
 
 const store = useDashboardStore()
@@ -338,10 +339,7 @@ async function confirmDeleteUser(u: UserDTO) {
           <h4 class="font-medium">主题</h4>
           <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
             <span class="text-muted">显示删除</span>
-            <span class="toggle">
-              <input type="checkbox" v-model="showThemeDelete" />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
+            <WbSwitch v-model="showThemeDelete" />
           </label>
         </div>
         <ThemePicker :show-delete="showThemeDelete" @edit="startEditCt" />
@@ -407,10 +405,7 @@ async function confirmDeleteUser(u: UserDTO) {
       <section class="border-t pt-4">
         <h4 class="font-medium mb-3">默认进入工作台</h4>
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <span class="toggle">
-            <input type="checkbox" v-model="defaultIsWorkbench" />
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </span>
+          <WbSwitch v-model="defaultIsWorkbench" />
           <span>默认进入工作台页面（关闭则进入导航页面）</span>
         </label>
         <p class="text-xs text-muted mt-2">设置后，打开本站默认网址将直接进入所选页面；本次会话内手动切换的视图不受影响。</p>
@@ -492,17 +487,11 @@ async function confirmDeleteUser(u: UserDTO) {
         <h4 class="font-medium mb-2">站点</h4>
         <div class="flex flex-wrap items-center gap-x-8 gap-y-3">
           <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <span class="toggle">
-              <input type="checkbox" v-model="allowRegisterLocal" />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
+            <WbSwitch v-model="allowRegisterLocal" />
             <span>开放新用户注册</span>
           </label>
           <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <span class="toggle">
-              <input type="checkbox" v-model="openInNew" />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
+            <WbSwitch v-model="openInNew" />
             <span>链接默认新窗口打开</span>
           </label>
         </div>

@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import AppIcon from './AppIcon.vue'
+import WbSelect from './WbSelect.vue'
 
 const store = useDashboardStore()
 const moveTarget = ref<number | ''>('')
@@ -9,9 +10,13 @@ const moveTarget = ref<number | ''>('')
 function selectAll() {
   store.setSelection(store.visibleLinkIds)
 }
-function onMove() {
-  if (moveTarget.value === '') return
-  store.batchMove(Number(moveTarget.value))
+function onMove(v: string | number) {
+  if (v === '' || v == null) {
+    moveTarget.value = ''
+    return
+  }
+  moveTarget.value = Number(v)
+  store.batchMove(Number(v))
   moveTarget.value = ''
 }
 function onDelete() {
@@ -32,10 +37,14 @@ function cancel() {
     </button>
 
     <div class="batch-move">
-      <select v-model="moveTarget" class="select select-sm" @change="onMove" aria-label="移动到分组">
-        <option value="" disabled>移动到…</option>
-        <option v-for="o in store.groupOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
+      <WbSelect
+        :model-value="moveTarget"
+        :options="store.groupOptions"
+        placeholder="移动到…"
+        :disabled="store.groupOptions.length === 0"
+        @update:modelValue="onMove"
+        class="select-sm"
+      />
     </div>
 
     <button type="button" class="btn btn-sm btn-error" @click="onDelete">
