@@ -1,0 +1,11 @@
+# 导航网站项目依赖清单
+# 安装方式（建议先建虚拟环境）：
+#   python -m venv venv
+#   venv\Scripts\activate      (Windows)
+#   pip install -r requirements.txt
+
+Flask==2.3.3
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
+Werkzeug==2.3.7

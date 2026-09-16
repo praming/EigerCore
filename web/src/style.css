@@ -1,0 +1,33 @@
+/* 复用 Flask 侧已编译设计系统（令牌 + 组件样式 + 拖拽/分类切换器等）
+   路径：web/src/style.css -> ../../app/static/src/input.css
+   postcss-import 先内联，再由 tailwindcss 处理 @tailwind 指令。 */
+@import '../../app/static/src/input.css';
+
+/* =====================================================================
+   SPA 根容器定高/滚动边界（Jinja 侧由 <main class="main"> 承担，
+   SPA 侧 AppShell 用 .app-shell 包裹，需在此补齐等价行为）
+   ---------------------------------------------------------------------
+   问题：原 AppShell 直接把 .layout 放在无样式的 .app-shell 下，缺少
+   .main 提供的 height:calc(100vh - 4rem) 定高边界，导致 .layout /
+   .drawer-content 的 height:100% 塌成 auto，再叠加桌面端 body{overflow:hidden}
+   后整页无法滚动、侧栏高度错乱。
+   修复：桌面端让 .app-shell 撑满视口（顶栏 4rem + 主体 flex:1），主体内部
+   滚动（.drawer-content overflow-y:auto）。移动端不约束高度，整页自然滚动。
+   ===================================================================== */
+@media (min-width: 1024px) {
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* 覆盖 input.css 里 .layout{height:100%}：父级已定高，改为 flex 填充并允许内部滚动 */
+  .app-shell > .layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    /* 顶部导航栏与下方内容之间保持间距（等效原 Jinja .main 的 1.5rem 内边距），
+       避免内容面板紧贴毛玻璃顶栏 */
+    padding: 1.5rem;
+  }
+}

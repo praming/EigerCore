@@ -1,0 +1,50 @@
+# ---- Dependencies ----
+node_modules/
+
+# ---- Build output ----
+dist/
+.ssr-out/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+instance/
+
+# ---- Runtime / logs / caches ----
+.cache/
+*.log
+nul
+
+# ---- Editor / OS ----
+.DS_Store
+.idea/
+.vscode/
+*.tmp
+
+# ---- Local env ----
+.env
+.env.local
+
+# ---- WorkBuddy internal (private project memory, machine-specific) ----
+.workbuddy/
+
+# ---- Runtime uploads (user-uploaded icons) ----
+app/static/uploads/
+
+# ---- Leftover debug artifacts at repo root ----
+ab_*
+_check_cols.py
+_kill5000.py
+_probe*.py
+_tok.py
+build_*.txt
+col_check.txt
+
+# ---- Probe / temp artifacts ----
+web/__probe_date*
+*.timestamp-*.mjs
+probe*.txt
+*_log.txt
+tok_check.txt
+served_*.html

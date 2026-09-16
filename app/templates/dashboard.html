@@ -1,0 +1,1531 @@
+{# dashboard.html —— 仪表盘：左侧分组导航 + 右侧卡片墙 + 各模态框（链接/分组/设置/密码） #}
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - {{ site_name or 'Eiger' }}{% endblock %}
+
+{% block content %}
+    {# ============ 抽屉布局：左侧分组导航（移动端为抽屉），右侧内容 ============ #}
+    <div class="layout">
+        {# 移动端开关复选框，由 base.html 顶栏的菜单按钮控制 #}
+        <input id="main-drawer" type="checkbox" class="drawer-toggle" />
+
+        {# ---------- 左侧分组导航（抽屉侧栏，圆角白底面板，桌面端固定不随右栏滚动） ---------- #}
+        <div class="drawer-side">
+            <label for="main-drawer" class="drawer-overlay" aria-label="关闭菜单"></label>
+            <div class="side-inner">
+                <aside class="side-scroll">
+                    <ul class="menu">
+                        {# 我的分组标题：全部 / 未分组 / 各分组 均归入其下 #}
+                        <li class="side-section"><span class="side-title">我的分组</span></li>
+
+                        {# 未分组：仅当存在无分组的链接（或正在查看该分组）时展示 #}
+                        {% if show_ungrouped %}
+                            <li>
+                                <a href="{% if view == 'overview' %}#sec-0{% else %}{{ url_for('main.dashboard', group=0) }}{% endif %}"
+                                   class="{{ 'active' if (view != 'overview' and active_group == 0) }}"
+                                   {% if view == 'overview' %}data-spy="0"{% endif %}>
+                                    <i data-lucide="inbox" class="w-4 h-4"></i> 未分组
+                                </a>
+                            </li>
+                        {% endif %}
+
+                        {# 用户自定义分组（独立 <ul> 便于编辑模式下拖拽排序） #}
+                        <ul id="group-list" class="menu">
+                        {% for g in groups %}
+                            <li>
+                                <div class="group-row {{ 'active' if (view != 'overview' and active_group == g.id) }}" data-id="{{ g.id }}" data-name="{{ g.name }}" data-icon="{{ g.icon or 'folder' }}" data-style="{{ g.card_style or 'card' }}" data-cols="{{ g.links_per_row or 4 }}" data-cols-rect="{{ g.links_per_row_rect or 12 }}" data-cols-ov="{{ g.links_per_row_overview or '' }}" data-cols-rect-ov="{{ g.links_per_row_rect_overview or '' }}" data-fs="{{ g.title_font_size or 'base' }}" data-maxlen="{{ g.title_max_len or 0 }}" data-showtitle="{{ '1' if g.show_title else '0' }}" data-rowgap="{{ g.row_gap or 16 }}" data-colgap="{{ g.col_gap or 16 }}" data-dockscale="{{ '%.2f' % (g.dock_scale or 1.4) }}"{% if view == 'overview' %} data-spy="{{ g.id }}"{% endif %}>
+                                    {# 分组入口：点击筛选该分组（总览视图下改为锚点滚动定位） #}
+                                    <a href="{% if view == 'overview' %}#sec-{{ g.id }}{% else %}{{ url_for('main.dashboard', group=g.id) }}{% endif %}"
+                                       class="group-link {{ 'active' if (view != 'overview' and active_group == g.id) }}">
+                                        <i data-lucide="{{ g.icon or 'folder' }}" class="w-4 h-4"></i>
+                                        <span class="truncate">{{ g.name }}</span>
+                                    </a>
+                                    {# 分组内的编辑 / 删除（小图标按钮，仅编辑模式显示） #}
+                                    <button class="g-act" title="编辑分组" onclick="openEditGroup({{ g.id }})">
+                                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button class="g-act g-del" title="删除分组" onclick="openDeleteGroup({{ g.id }})">
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+                            </li>
+                        {% endfor %}
+                        </ul>
+
+                        {# 新建分组 #}
+                        <li>
+                            <button class="add-group-btn" onclick="openAddGroup()">
+                                <i data-lucide="plus" class="w-4 h-4"></i> 新建分组
+                            </button>
+                        </li>
+                    </ul>
+                </aside>
+
+                {# 侧栏底部一行：仅图标的「全部」入口 + 「回到顶部」（同一行居中显示） #}
+                <div class="side-foot">
+                    <a href="{% if view == 'overview' %}#ov-top{% else %}{{ url_for('main.dashboard', group='__all__') }}{% endif %}"
+                       class="foot-btn {{ 'active' if (view != 'overview' and active_group is none) }}"
+                       title="全部链接" aria-label="全部链接">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                    </a>
+                    <button type="button" class="foot-btn" onclick="scrollContentTop()" title="回到顶部" aria-label="回到顶部">
+                        <i data-lucide="arrow-up-to-line" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {# ---------- 右侧内容区 ---------- #}
+        <div class="drawer-content">
+            {# 右侧整体：圆角 / 白底 / 内边距 的面板（高度撑满，链接少时也占满整屏） #}
+                <div class="content-panel">
+                {# ============ 链接卡片宏：单组视图与总览视图共用，避免重复标记 ============ #}
+                {% macro link_card(link, settings, is_rect, show_title, maxlen) %}
+                    <div class="link-card" data-id="{{ link.id }}" data-title="{{ link.title }}"
+                         data-url="{{ link.url }}" data-icon="{{ link.icon or '' }}"
+                         data-note="{{ link.note or '' }}" data-group="{{ link.group_id or 0 }}"
+                         data-iconurl="{{ link.icon_url or '' }}"
+                         {% if link.bg_color %}data-bg="{{ link.bg_color }}"{% endif %}
+                         {% if link.title_color %}data-tc="{{ link.title_color }}"{% endif %}
+                         {% if link.bg_color or link.title_color %}style="{% if link.bg_color %}--card-bg:{{ link.bg_color }};{% endif %}{% if link.title_color %}--card-tc:{{ link.title_color }};{% endif %}"{% endif %}>
+                        <label class="link-check" title="选择">
+                            <input type="checkbox" class="link-checkbox" value="{{ link.id }}">
+                            <span class="check-box" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                        </label>
+                        <a class="link-main" href="{{ link.url }}"
+                           target="{{ '_blank' if settings.open_in_new else '_self' }}" rel="noopener noreferrer"
+                           {% if is_rect %}
+                           aria-label="{{ link.title }}{% if link.note %} — {{ link.note }}{% endif %}"
+                           {% else %}
+                           title="{{ link.title }}{% if link.note %}&#10;{{ link.note }}{% endif %}"
+                           {% endif %}>
+                            <div class="link-icon">
+                                {% if link.icon_url %}
+                                    <img src="{{ link.icon_url }}" alt="" class="link-icon-img">
+                                {% else %}
+                                    <i data-lucide="{{ link.icon or 'link' }}"></i>
+                                {% endif %}
+                            </div>
+                            {% if show_title %}
+                            <div class="link-body">
+                                {% if maxlen and maxlen > 0 and link.title|length > maxlen %}
+                                    <span class="link-title">{{ link.title[:maxlen] }}…</span>
+                                {% else %}
+                                    <span class="link-title">{{ link.title }}</span>
+                                {% endif %}
+                                {% if link.note %}<span class="link-note">{{ link.note }}</span>{% endif %}
+                            </div>
+                            {% endif %}
+                        </a>
+                        <div class="link-actions">
+                            <button class="btn btn-sm btn-ghost gap-1" onclick="openEdit({{ link.id }})">
+                                <i data-lucide="pencil" class="w-4 h-4"></i> <span class="act-label">编辑</span>
+                            </button>
+                            <button class="btn btn-sm btn-ghost text-error gap-1" onclick="openDelete({{ link.id }})">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i> <span class="act-label">删除</span>
+                            </button>
+                        </div>
+                    </div>
+                {% endmacro %}
+
+                {# 共用变量（两种视图都会用到） #}
+                {% set _fs_map = {'10px':'10px','12px':'12px','sm':'0.85rem','base':'1rem','lg':'1.15rem','xl':'1.35rem','2xl':'1.6rem'} %}
+                {% set _title_fs = _fs_map.get(card_title_font_size, '1rem') %}
+                {% set _cols = card_cols|int %}
+                {% set _row_gap = card_row_gap|int %}
+                {% set _col_gap = card_col_gap|int %}
+                {% set _show_title = card_show_title %}
+                {% set _is_rect = active_card_style == 'link' %}
+
+                {# ============ Hero 头部（视图标题 + 新增链接 + 共 x 个，同一行） ============ #}
+                <div class="dash-hero">
+                    {% if view == 'overview' %}
+                        <h1 class="section-title">全部链接 · 总览</h1>
+                        <button type="button" class="hero-add" onclick="openAdd()" title="新增链接" aria-label="新增链接">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                        <span class="section-sub">共 {{ total_links }} 个链接 · 滚动浏览，左侧自动定位</span>
+                    {% else %}
+                        <h1 class="section-title">{{ active_group_title }}</h1>
+                        <button type="button" class="hero-add" onclick="openAdd()" title="新增链接" aria-label="新增链接">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                        <span class="section-sub">共 {{ links|length }} 个链接</span>
+                    {% endif %}
+                </div>
+
+                {% if view == 'overview' %}
+                {# ============ 总览：所有分组 + 未分组，逐段渲染（单页滚动，侧栏自动定位） ============ #}
+                <div id="ov-top"></div>
+                <div class="overview">
+                    {% for sec in overview_sections %}
+                    <section class="ov-section" id="sec-{{ sec.id }}" data-sec="{{ sec.id }}">
+                        <header class="ov-section-head">
+                            <i data-lucide="{{ sec.icon }}" class="ov-sec-ic"></i>
+                            <h2 class="ov-sec-title">{{ sec.name }}</h2>
+                            <span class="ov-sec-count">{{ sec.links|length }} 个链接</span>
+                        </header>
+                        {% if sec.links %}
+                        <div class="nav-grid {{ 'grid--link' if sec.is_rect else '' }} {{ 'grid-no-title' if not sec.show_title else '' }}"
+                             data-dock-scale="{{ sec.dock_scale }}"
+                             style="--cols: {{ sec.cols }}; --cols-md: {{ [4, sec.cols]|min }}; --title-fs: {{ _fs_map.get(sec.title_fs, '1rem') }}; --row-gap: {{ sec.row_gap }}px; --col-gap: {{ sec.col_gap }}px;">
+                            {% for link in sec.links %}{{ link_card(link, settings, sec.is_rect, sec.show_title, sec.maxlen) }}{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="empty-state"><p>该分组暂无链接。</p></div>
+                        {% endif %}
+                    </section>
+                    {% endfor %}
+                </div>
+                {% else %}
+                {# ============ 卡片网格（SortableJS 容器，仅编辑模式可拖拽） ============ #}
+                <div id="sortable-grid" class="nav-grid {{ 'grid--link' if _is_rect else '' }} {{ 'grid-no-title' if not _show_title else '' }}" data-dock-scale="{{ card_dock_scale }}"
+                     style="--cols: {{ _cols }}; --cols-md: {{ [4, _cols]|min }}; --title-fs: {{ _title_fs }}; --row-gap: {{ _row_gap }}px; --col-gap: {{ _col_gap }}px;">
+
+                    {# ----- 循环后端传来的 links 列表 ----- #}
+                    {% for link in links %}
+                        {{ link_card(link, settings, _is_rect, _show_title, card_title_max_len) }}
+                    {% else %}
+                        {# links 为空时的提示 #}
+                        <div class="empty-state">
+                            <span class="es-emoji"><i data-lucide="bookmark-plus"></i></span>
+                            <p>还没有任何链接，点击上方「新增链接」开始吧～</p>
+                        </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# 搜索无结果时的占位提示（由 onNavSearch 控制显隐） #}
+                <div id="search-empty" class="empty-state" style="display:none;">
+                    <span class="es-emoji"><i data-lucide="search-x"></i></span>
+                    <p>没有找到匹配的链接，换个关键词试试。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# 编辑模式下的批量操作条（默认隐藏，进入编辑模式显示） #}
+    <div class="batch-bar" id="batch-bar">
+        <span class="batch-info">已选 <b id="batch-count">0</b> 项</span>
+        <select id="batch-group" class="select select-sm">
+            <option value="0">未分组</option>
+            {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="batchMove()">移动到分组</button>
+        <button class="btn btn-sm btn-error" onclick="batchDelete()">删除选中</button>
+        <button class="btn btn-sm btn-ghost" onclick="batchSelectAll()">全选 / 取消</button>
+    </div>
+
+    {# ============ 新增 / 编辑 共用的链接模态框 ============ #}
+    <dialog id="link-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold mb-2" id="modal-title">新增链接</h3>
+
+            {# 表单提交到 id 由 JS 动态设置的 action；CSRF 令牌由 WTForms 渲染 #}
+            <form method="post" id="link-form" action="{{ url_for('main.add_link') }}" enctype="multipart/form-data">
+                {{ form.csrf_token }}   {# 防护 CSRF 跨站请求伪造 #}
+                <input type="hidden" name="id" id="link-id">
+                {# 记录「当前正在查看的分组」，提交后让后端重定向回本页（而非跳回首页） #}
+                <input type="hidden" name="view_group" id="view-group" value="">
+                {# 记录「当前视图」（nav / overview），提交后保持在同一视图 #}
+                <input type="hidden" name="view" value="{{ view }}">
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">标题</span>
+                    {# 输入框右侧内嵌「抓取标题」按钮：读取 URL 输入框内容，后端拉取 <title> #}
+                    <div class="input-wrap">
+                        <input type="text" name="title" id="f-title"
+                               class="input input-has-append w-full" required>
+                        <button type="button" class="input-append" id="fetch-title-btn"
+                                onclick="fetchTitle()" title="根据 URL 自动获取网站标题">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span class="ia-text">获取</span>
+                        </button>
+                    </div>
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">URL</span>
+                    <input type="url" name="url" id="f-url"
+                           class="input w-full" placeholder="https://" required>
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">图标（上传图片，支持 JPG / PNG / SVG）</span>
+                    {# 美化后的上传控件：虚线拖拽区 + 隐藏原生 file 输入 #}
+                    <div class="uploader" id="icon-uploader">
+                        <input type="file" name="icon_file" id="f-icon-file"
+                               accept="image/png,image/jpeg,image/svg+xml"
+                               class="uploader-input" onchange="onIconFileChange()">
+                        <div class="uploader-inner">
+                            <span class="uploader-icon"><i data-lucide="image-plus"></i></span>
+                            <span class="uploader-text">点击或拖拽上传图标</span>
+                            <span class="uploader-hint">支持 JPG / PNG / SVG，建议 1:1 正方形</span>
+                        </div>
+                    </div>
+                    <div id="icon-preview" class="mt-2"></div>
+                    <small class="text-muted">不选择则使用默认图标；SVG 会自动净化以防安全风险。</small>
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">备注（选填，显示在标题下方）</span>
+                    <input type="text" name="note" id="f-note"
+                           class="input w-full" placeholder="如：常用文档 / 内部系统">
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">卡片背景色（柔和色系，可选自定义）</span>
+                    {# 10 种内置柔和色（莫兰迪 / 中国传统色）+ 默认 + 自定义取色器 #}
+                    <div class="bg-picker" id="bg-picker">
+                        <button type="button" class="bg-swatch is-default selected" data-color="" title="默认" onclick="pickBg('')"><i data-lucide="ban" class="w-4 h-4"></i></button>
+                        <button type="button" class="bg-swatch" data-color="#A6B5C0" style="background:#A6B5C0" title="黛蓝灰" onclick="pickBg('#A6B5C0')"></button>
+                        <button type="button" class="bg-swatch" data-color="#B7C4B1" style="background:#B7C4B1" title="竹青灰" onclick="pickBg('#B7C4B1')"></button>
+                        <button type="button" class="bg-swatch" data-color="#E3C5C5" style="background:#E3C5C5" title="藕粉" onclick="pickBg('#E3C5C5')"></button>
+                        <button type="button" class="bg-swatch" data-color="#EAD8BE" style="background:#EAD8BE" title="杏米" onclick="pickBg('#EAD8BE')"></button>
+                        <button type="button" class="bg-swatch" data-color="#C9BBD9" style="background:#C9BBD9" title="暮山紫" onclick="pickBg('#C9BBD9')"></button>
+                        <button type="button" class="bg-swatch" data-color="#B9D4DE" style="background:#B9D4DE" title="天青" onclick="pickBg('#B9D4DE')"></button>
+                        <button type="button" class="bg-swatch" data-color="#D9D0A3" style="background:#D9D0A3" title="秋香" onclick="pickBg('#D9D0A3')"></button>
+                        <button type="button" class="bg-swatch" data-color="#E0C4CE" style="background:#E0C4CE" title="藕荷" onclick="pickBg('#E0C4CE')"></button>
+                        <button type="button" class="bg-swatch" data-color="#D9B0B0" style="background:#D9B0B0" title="灰玫" onclick="pickBg('#D9B0B0')"></button>
+                        <button type="button" class="bg-swatch" data-color="#BCD0C0" style="background:#BCD0C0" title="松绿" onclick="pickBg('#BCD0C0')"></button>
+                        <label class="bg-swatch bg-custom" title="自定义颜色">
+                            <i data-lucide="plus" class="bc-ic"></i>
+                            <input type="color" id="f-bg-custom" class="bc-input" onchange="pickCustomBg(this.value)" aria-label="自定义背景色">
+                        </label>
+                    </div>
+                    <input type="hidden" name="bg_color" id="f-bg-color" value="">
+                    <small class="text-muted">不选择则使用默认卡片背景。</small>
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">标题文字颜色</span>
+                    {# 默认（跟随主题）/ 黑 / 白 / 自定义取色器 #}
+                    <div class="bg-picker" id="tc-picker">
+                        <button type="button" class="bg-swatch is-default selected" data-color="" title="默认（跟随主题）" onclick="pickTc('')"><i data-lucide="ban" class="w-4 h-4"></i></button>
+                        <button type="button" class="bg-swatch" data-color="#000000" style="background:#000000" title="黑色" onclick="pickTc('#000000')"></button>
+                        <button type="button" class="bg-swatch" data-color="#FFFFFF" style="background:#FFFFFF" title="白色" onclick="pickTc('#FFFFFF')"></button>
+                        <label class="bg-swatch bg-custom" title="自定义文字颜色">
+                            <i data-lucide="plus" class="bc-ic"></i>
+                            <input type="color" id="f-tc-custom" class="bc-input" onchange="pickCustomTc(this.value)" aria-label="自定义标题颜色">
+                        </label>
+                    </div>
+                    <input type="hidden" name="title_color" id="f-title-color" value="">
+                    <small class="text-muted">深色背景建议选白色，浅色背景建议选黑色，以保证对比度可读性。</small>
+                </label>
+
+                <label class="form-control w-full my-2">
+                    <span class="label-text">分组</span>
+                    {# WTForms 渲染下拉框，choices 已在路由填充；id=f-group 供 JS 预设 #}
+                    {{ form.group_id(id="f-group", class="select w-full") }}
+                </label>
+
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="document.getElementById('link-modal').close()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    {# ============ 删除链接二次确认弹窗 ============ #}
+    <dialog id="delete-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-error"></i> 确认删除
+            </h3>
+            <p class="py-4 text-muted">确定要删除该链接吗？此操作不可撤销。</p>
+            {# 单独一个表单，action 由 JS 按待删 id 设置；CSRF 令牌复用 LinkForm #}
+            <form method="post" id="delete-form" action="">
+                {{ form.csrf_token }}
+                <input type="hidden" name="view_group" id="del-view-group" value="">
+                <input type="hidden" name="view" value="{{ view }}">
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="document.getElementById('delete-modal').close()">取消</button>
+                    <button type="submit" class="btn btn-error">确认删除</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    {# ============ 新增 / 编辑 分组模态框 ============ #}
+    <dialog id="group-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold mb-2" id="group-modal-title">新建分组</h3>
+            <form method="post" id="group-form" action="{{ url_for('main.add_group') }}">
+                {{ group_form.csrf_token }}
+                <input type="hidden" id="group-id">
+                {# 记录当前视图分组，提交后停留在同一页面（不跳回首页） #}
+                <input type="hidden" name="view_group" id="group-view-group" value="{% if active_group is not none %}{{ active_group }}{% else %}all{% endif %}">
+                {# 记录当前视图（nav / overview），提交后保持在同一视图 #}
+                <input type="hidden" name="view" value="{{ view }}">
+                <label class="form-control w-full my-2">
+                    <span class="label-text">分组名称</span>
+                    <input type="text" name="name" id="g-name" class="input w-full" required>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">图标（Lucide 图标名，如 folder / briefcase / star）</span>
+                    <input type="text" name="icon" id="g-icon" class="input w-full" placeholder="folder">
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">卡片样式（该分组下链接的展示方式）</span>
+                    <select name="card_style" id="g-style" class="select w-full" onchange="refreshGroupColsFromStyle(this.value)">
+                        <option value="card">横排卡片（图标在左，标题 / 备注在右）</option>
+                        <option value="link">矩形卡片（图标方块在上、标题在下，悬停显示备注）</option>
+                    </select>
+                    <small class="text-muted">背景色、标题颜色等卡片设置项不受样式影响，两种样式通用。</small>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text" id="g-cols-label">导航视图每行显示数量</span>
+                    <select name="g_cols" id="g-cols" class="select w-full"></select>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text" id="g-cols-ov-label">总览视图每行显示数量</span>
+                    <select name="g_cols_ov" id="g-cols-ov" class="select w-full"></select>
+                    <small class="text-muted">总览视图（单页展示全部分组）可单独设置每行数量，与上方导航视图互不干扰。</small>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">标题字号</span>
+                    <select name="g_fs" id="g-fs" class="select w-full">
+                        <option value="10px">特小（10px）</option>
+                        <option value="12px">较小（12px）</option>
+                        <option value="sm">小（13px）</option>
+                        <option value="base">中（16px）</option>
+                        <option value="lg">大（18px）</option>
+                        <option value="xl">特大（21px）</option>
+                        <option value="2xl">超大（26px）</option>
+                    </select>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">标题最大字符数（超出截断，0 为不限制）</span>
+                    <select name="g_maxlen" id="g-maxlen" class="select w-full">
+                        <option value="0">不限制</option>
+                        <option value="6">6 字</option>
+                        <option value="8">8 字</option>
+                        <option value="10">10 字</option>
+                        <option value="12">12 字</option>
+                        <option value="16">16 字</option>
+                        <option value="20">20 字</option>
+                    </select>
+                </label>
+                <div class="flex items-center justify-between my-2 px-1">
+                    <span class="label-text">显示标题（关闭后卡片仅显示图标）</span>
+                    <label class="toggle">
+                        <input type="checkbox" name="g_show_title" id="g-show-title" value="1" checked>
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </label>
+                </div>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">行间距：<b id="g-rowgap-val">16</b> px</span>
+                    <input type="range" min="0" max="48" step="2" name="g_row_gap" id="g-rowgap"
+                           value="16" class="range range-primary"
+                           oninput="document.getElementById('g-rowgap-val').textContent=this.value">
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">列间距：<b id="g-colgap-val">16</b> px</span>
+                    <input type="range" min="0" max="48" step="2" name="g_col_gap" id="g-colgap"
+                           value="16" class="range range-primary"
+                           oninput="document.getElementById('g-colgap-val').textContent=this.value">
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">Dock 放大倍数：<b id="g-dockscale-val">1.40</b> ×</span>
+                    <input type="range" min="1" max="2.5" step="0.05" name="g_dock_scale" id="g-dockscale"
+                           value="1.4" class="range range-primary"
+                           oninput="document.getElementById('g-dockscale-val').textContent=parseFloat(this.value).toFixed(2)">
+                </label>
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="document.getElementById('group-modal').close()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    {# ============ 删除分组二次确认弹窗 ============ #}
+    <dialog id="delete-group-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-error"></i> 确认删除分组
+            </h3>
+            <p class="py-4 text-muted">确定删除分组「<span id="delete-group-name" class="font-bold"></span>」吗？
+                其下链接将移至「未分组」，不会被删除。</p>
+            <form method="post" id="delete-group-form" action="">
+                {{ group_form.csrf_token }}
+                <input type="hidden" name="view" value="{{ view }}">
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="document.getElementById('delete-group-modal').close()">取消</button>
+                    <button type="submit" class="btn btn-error">确认删除</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    {# ============ 修改密码弹窗 ============ #}
+    <dialog id="password-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold mb-2 flex items-center gap-2">
+                <i data-lucide="key-round" class="w-5 h-5"></i> 修改密码
+            </h3>
+            <label class="form-control w-full my-2">
+                <span class="label-text">当前密码</span>
+                <input type="password" id="pw-old" class="input w-full" required>
+            </label>
+            <label class="form-control w-full my-2">
+                <span class="label-text">新密码（至少 6 位）</span>
+                <input type="password" id="pw-new" class="input w-full" required>
+            </label>
+            <label class="form-control w-full my-2">
+                <span class="label-text">确认新密码</span>
+                <input type="password" id="pw-confirm" class="input w-full" required>
+            </label>
+            <div class="modal-action">
+                <button type="button" class="btn" onclick="document.getElementById('password-modal').close()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="savePassword()">保存</button>
+            </div>
+        </div>
+    </dialog>
+
+    {# ============ 设置弹窗（主题 / 自定义配色 / 用户资料 / 系统设置） ============ #}
+    <dialog id="settings-modal" class="modal">
+        <div class="modal-box max-w-2xl">
+            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                <i data-lucide="settings" class="w-5 h-5"></i> 设置
+            </h3>
+
+            {# ---------- 内置主题 / 配色 ---------- #}
+            <section class="set-section">
+                <h4 class="font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="palette" class="w-4 h-4 text-primary"></i> 主题 / 配色
+                </h4>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {% set ui_themes = [
+                        ('light', '浅色'), ('dark', '暗夜'),
+                        ('violet', '紫罗兰'), ('emerald', '翠绿'),
+                        ('rose', '玫瑰'), ('amber', '琥珀')
+                    ] %}
+                    {% for key, label in ui_themes %}
+                        <button type="button" class="theme-chip {{ 'active' if settings.theme == key }}"
+                                data-theme="{{ key }}" onclick="applyTheme('{{ key }}')">
+                            {{ label }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </section>
+
+            {# ---------- 自定义配色 ---------- #}
+            <section class="set-section">
+                <h4 class="font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="pipette" class="w-4 h-4 text-primary"></i> 自定义配色
+                </h4>
+                {# 已保存的自定义配色，作为可选主题（点击应用，× 删除） #}
+                {% if custom_themes %}
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                        {% for ct in custom_themes %}
+                            <div class="theme-chip theme-chip-custom {{ 'active' if active_custom and active_custom.id == ct.id }}"
+                                 data-theme="custom:{{ ct.id }}" data-p="{{ ct.p }}" data-s="{{ ct.s }}"
+                                 data-b1="{{ ct.b1 }}" data-b2="{{ ct.b2 }}" data-bc="{{ ct.bc }}" data-pc="{{ ct.pc }}"
+                                 onclick="applyTheme('custom:{{ ct.id }}')">
+                                <span class="swatch" style="background:{{ ct.primary }}"></span>
+                                <span class="ct-name">{{ ct.name }}</span>
+                                <button type="button" class="chip-del" title="删除配色"
+                                        onclick="event.stopPropagation(); deleteCustomTheme({{ ct.id }})">×</button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                {# 新建自定义配色：名称输入框与四个颜色预览框（矩形）放在同一行 #}
+                <div class="ct-new-row">
+                    <label class="form-control ct-name-field">
+                        <span class="label-text">名称</span>
+                        <input id="ct-name" class="input" placeholder="如：我的蓝">
+                    </label>
+                    <div class="ct-colors">
+                        <label class="color-cell">
+                            <span class="label-text">主色</span>
+                            <input type="color" id="ct-primary" value="#6366f1" class="color-input">
+                        </label>
+                        <label class="color-cell">
+                            <span class="label-text">辅色</span>
+                            <input type="color" id="ct-secondary" value="#a855f7" class="color-input">
+                        </label>
+                        <label class="color-cell">
+                            <span class="label-text">背景</span>
+                            <input type="color" id="ct-background" value="#ffffff" class="color-input">
+                        </label>
+                        <label class="color-cell">
+                            <span class="label-text">文字</span>
+                            <input type="color" id="ct-text" value="#1f2937" class="color-input">
+                        </label>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm mt-3" onclick="saveCustomTheme()">保存配色</button>
+            </section>
+
+            {# ---------- 用户资料 ---------- #}
+            <section class="set-section">
+                <h4 class="font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="user" class="w-4 h-4 text-primary"></i> 用户资料
+                </h4>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">昵称</span>
+                    <input id="set-nickname" class="input w-full"
+                           value="{{ current_user.nickname or '' }}" placeholder="未设置">
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">头像（图片 URL，留空使用默认图标）</span>
+                    <input id="set-avatar" class="input w-full"
+                           value="{{ current_user.avatar or '' }}" placeholder="https://...">
+                </label>
+                <button class="btn btn-primary btn-sm mt-1" onclick="saveProfile()">保存资料</button>
+                <button class="btn btn-outline btn-sm mt-1" onclick="openPassword()">修改密码</button>
+            </section>
+
+            {# ---------- 系统设置 ---------- #}
+            <section class="set-section">
+                <h4 class="font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="sliders-horizontal" class="w-4 h-4 text-primary"></i> 系统设置
+                </h4>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">链接打开方式</span>
+                    <select id="set-target" class="select w-full">
+                        <option value="1" {{ 'selected' if settings.open_in_new }}>新窗口打开</option>
+                        <option value="0" {{ 'selected' if not settings.open_in_new }}>本窗口打开</option>
+                    </select>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">默认首页</span>
+                    <select id="set-home" class="select w-full">
+                        <option value="all" {{ 'selected' if not settings.default_home or settings.default_home == 'all' }}>全部链接</option>
+                        {% for g in groups %}
+                            <option value="group:{{ g.id }}" {{ 'selected' if settings.default_home == 'group:' ~ g.id }}>{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">全部链接页每行数量
+                        <small class="text-muted">（仅对「全部链接 / 未分组」页面生效，具体分组以各自分组设置为准）</small>
+                    </span>
+                    <select id="set-cols-all" class="select w-full">
+                        {% for n in range(1, 9) %}
+                            <option value="{{ n }}" {{ 'selected' if (settings.links_per_row or 4) == n }}>{{ n }} 个</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="form-control w-full my-2">
+                    <span class="label-text">全部链接页 Dock 放大倍数：<b id="set-dockscale-val">{{ '%.2f'|format(settings.dock_scale or 1.4) }}</b> ×</span>
+                    <input type="range" min="1" max="2.5" step="0.05" id="set-dockscale"
+                           value="{{ settings.dock_scale or 1.4 }}" class="range range-primary"
+                           oninput="document.getElementById('set-dockscale-val').textContent=parseFloat(this.value).toFixed(2)">
+                </label>
+                <div class="flex items-center justify-between my-2 px-1">
+                    <span class="label-text">开放新用户注册</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="set-register" {{ 'checked' if allow_register }} onchange="saveRegisterOpen(this.checked)">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </label>
+                </div>
+                {# 一个按钮统一保存本区所有设置（每行链接数 / 打开方式 / 默认首页）；
+                   注册开关为即时生效的独立开关，无需按钮 #}
+                <button class="btn btn-primary btn-sm mt-1" onclick="saveSystem()">保存系统设置</button>
+            </section>
+
+            {# ---------- 数据管理：导入 / 导出 ---------- #}
+            <section class="set-section">
+                <h4 class="font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="database" class="w-4 h-4 text-primary"></i> 数据管理
+                </h4>
+                <p class="text-xs text-base-content/60 mb-3">导出当前账号的全部分组、链接、配色与设置；导入时会按名称/网址自动合并，不覆盖其它数据。</p>
+                <div class="flex flex-wrap items-center gap-2 mb-4">
+                    <span class="label-text mr-1">导出：</span>
+                    <button class="btn btn-outline btn-sm" onclick="exportData('json')">
+                        <i data-lucide="file-json" class="w-4 h-4"></i> JSON
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="exportData('xlsx')">
+                        <i data-lucide="sheet" class="w-4 h-4"></i> Excel
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="exportData('html')">
+                        <i data-lucide="globe" class="w-4 h-4"></i> HTML
+                    </button>
+                </div>
+                <div id="import-zone" class="flex flex-wrap items-center gap-2">
+                    <span class="label-text mr-1">导入：</span>
+                    <label class="btn btn-outline btn-sm cursor-pointer" for="import-file">
+                        <i data-lucide="file-up" class="w-4 h-4"></i> 选择文件
+                    </label>
+                    <input type="file" id="import-file" accept=".json,.xlsx,.xls,.html,.htm"
+                           class="hidden"
+                           onchange="document.getElementById('import-fname').textContent = this.files[0] ? this.files[0].name : ''">
+                    <span id="import-fname" class="text-xs text-base-content/60 truncate max-w-[10rem]"></span>
+                    <button class="btn btn-primary btn-sm" onclick="importData()" id="import-btn">
+                        <i data-lucide="upload" class="w-4 h-4"></i> 导入
+                    </button>
+                    <span id="import-msg" class="text-xs"></span>
+                </div>
+                <div class="divider my-2"></div>
+                <p class="text-xs text-base-content/60 mb-3">全量备份：把当前账号的数据连同上传的图标打包成一个文件；还原时一键恢复（与导入相同的合并规则，不会丢失其它数据）。</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="label-text mr-1">备份 / 还原：</span>
+                    <button class="btn btn-outline btn-sm" onclick="backupData()">
+                        <i data-lucide="archive" class="w-4 h-4"></i> 备份下载
+                    </button>
+                    <label class="btn btn-outline btn-sm cursor-pointer" for="restore-file">
+                        <i data-lucide="file-up" class="w-4 h-4"></i> 选择文件
+                    </label>
+                    <input type="file" id="restore-file" accept=".zip"
+                           class="hidden"
+                           onchange="document.getElementById('restore-fname').textContent = this.files[0] ? this.files[0].name : ''">
+                    <span id="restore-fname" class="text-xs text-base-content/60 truncate max-w-[10rem]"></span>
+                    <button class="btn btn-primary btn-sm" onclick="restoreData()" id="restore-btn">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> 还原
+                    </button>
+                    <span id="restore-msg" class="text-xs"></span>
+                </div>
+            </section>
+
+            <div class="modal-action">
+                <button class="btn" onclick="document.getElementById('settings-modal').close()">关闭</button>
+            </div>
+        </div>
+    </dialog>
+{% endblock %}
+
+{% block scripts %}
+    {# SortableJS：实现拖拽排序（已本地化，无 CDN 依赖） #}
+    <script src="{{ url_for('static', filename='js/Sortable.min.js') }}"></script>
+    <script>
+        // 当前筛选的分组（来自后端），用于"新增链接"时预设所属分组
+        const ACTIVE_GROUP = {% if active_group is not none %}{{ active_group }}{% else %}null{% endif %};
+        let sortableInstance = null;   // 卡片拖拽实例，编辑模式才启用
+        let groupSortable = null;     // 侧栏分组拖拽实例，编辑模式才启用
+
+        // ---------- 打开"新增"模态框 ----------
+        function openAdd() {
+            document.getElementById('modal-title').textContent = '新增链接';
+            document.getElementById('link-form').action = "{{ url_for('main.add_link') }}";
+            document.getElementById('link-id').value = '';
+            document.getElementById('f-title').value = '';
+            // URL 预填协议头，省去每次手输 https://（光标定位到末尾）
+            document.getElementById('f-url').value = 'https://';
+            document.getElementById('f-note').value = '';
+            document.getElementById('f-icon-file').value = '';
+            document.getElementById('icon-preview').innerHTML = '';
+            document.getElementById('icon-uploader').classList.remove('has-file');
+            // 若正在查看某个具体分组，则新链接默认归入该分组
+            const gid = (ACTIVE_GROUP !== null) ? ACTIVE_GROUP : 0;
+            document.getElementById('f-group').value = gid;
+            // 记录当前视图分组，提交后停留在同一页面（不跳回首页）
+            document.getElementById('view-group').value = (ACTIVE_GROUP === null ? 'all' : String(ACTIVE_GROUP));
+            setBgPicker('');          // 新增时背景色复位为默认
+            setTcPicker('');          // 标题颜色复位为默认
+            enhanceSync();            // 同步美化后的下拉框显示
+            document.getElementById('link-modal').showModal();
+            // 打开后把光标放到 https:// 之后，方便直接粘贴/续写
+            const u = document.getElementById('f-url');
+            try { u.setSelectionRange(u.value.length, u.value.length); } catch (e) {}
+        }
+
+        // ---------- 打开"编辑"模态框（仅传 id，字段从卡片 data-* 读取） ----------
+        function openEdit(id) {
+            const card = document.querySelector('.link-card[data-id="' + id + '"]');
+            if (!card) return;
+            const d = card.dataset;
+            document.getElementById('modal-title').textContent = '编辑链接';
+            document.getElementById('link-form').action =
+                "{{ url_for('main.edit_link', link_id=0) }}".replace('/0/', '/' + id + '/');
+            document.getElementById('link-id').value = id;
+            document.getElementById('f-title').value = d.title || '';
+            document.getElementById('f-url').value = d.url || '';
+            document.getElementById('f-note').value = d.note || '';
+            document.getElementById('f-icon-file').value = '';
+            // 图标预览：已有上传图标则展示，否则提示默认
+            const prev = document.getElementById('icon-preview');
+            prev.innerHTML = d.iconurl
+                ? '<img src="' + d.iconurl + '" alt="" class="icon-prev-img"> <span class="text-muted">当前图标（重新上传可替换）</span>'
+                : '<span class="text-muted">当前使用默认图标</span>';
+            document.getElementById('icon-uploader').classList.toggle('has-file', !!d.iconurl);
+            document.getElementById('f-group').value = d.group || 0;
+            // 记录当前视图分组，提交后停留在同一页面（不跳回首页）
+            document.getElementById('view-group').value = (ACTIVE_GROUP === null ? 'all' : String(ACTIVE_GROUP));
+            setBgPicker(d.bg || '');  // 还原该链接已设的背景色
+            setTcPicker(d.tc || '');  // 还原该链接已设的标题颜色
+            enhanceSync();            // 同步美化后的下拉框显示
+            document.getElementById('link-modal').showModal();
+        }
+
+        // ---------- 图标选择预览（上传控件 onchange 触发） ----------
+        function onIconFileChange() {
+            const inp = document.getElementById('f-icon-file');
+            const prev = document.getElementById('icon-preview');
+            const up = document.getElementById('icon-uploader');
+            if (inp.files && inp.files.length) {
+                const f = inp.files[0];
+                const url = URL.createObjectURL(f);   // 本地 blob 预览，无 XSS 风险
+                prev.innerHTML = '<img src="' + url + '" alt="" class="icon-prev-img"> <span class="text-muted">' + (f.name || '已选择图标') + '</span>';
+                up.classList.add('has-file');
+            } else {
+                up.classList.remove('has-file');
+            }
+        }
+
+        // ---------- 打开"删除链接"确认模态框 ----------
+        function openDelete(id) {
+            document.getElementById('delete-form').action =
+                "{{ url_for('main.delete_link', link_id=0) }}".replace('/0/', '/' + id + '/');
+            // 记录当前视图分组，删除后停留在同一页面
+            document.getElementById('del-view-group').value = (ACTIVE_GROUP === null ? 'all' : String(ACTIVE_GROUP));
+            document.getElementById('delete-modal').showModal();
+        }
+
+        // ---------- 分组：新增 / 编辑 / 删除 ----------
+        // ---------- 分组弹窗：根据卡片样式动态生成「每行数量」下拉范围 ----------
+        // 横排卡片 1~8 列，矩形卡片 1~24 列；切换样式时按该样式默认列数重填
+        function fillColsSelect(sel, max, val) {
+            if (!sel) return;
+            sel.innerHTML = '';
+            for (let n = 1; n <= max; n++) {
+                const o = document.createElement('option');
+                o.value = n;
+                o.textContent = n + ' 个 / 行';
+                if (n === val) o.selected = true;
+                sel.appendChild(o);
+            }
+        }
+        // 同时填充「导航视图」与「总览视图」两个每行数下拉，并按当前卡片样式更新标签提示
+        function refreshGroupCols(style, currentNav, currentOv) {
+            const max = (style === 'link') ? 24 : 8;
+            const def = (style === 'link') ? 12 : 4;
+            const valNav = (currentNav >= 1 && currentNav <= max) ? currentNav : def;
+            const valOv  = (currentOv  >= 1 && currentOv  <= max) ? currentOv  : def;
+            fillColsSelect(document.getElementById('g-cols'), max, valNav);
+            fillColsSelect(document.getElementById('g-cols-ov'), max, valOv);
+            const suffix = (style === 'link') ? '（正方形方块，1~24）' : '（横排卡片，1~8）';
+            const l1 = document.getElementById('g-cols-label');
+            const l2 = document.getElementById('g-cols-ov-label');
+            if (l1) l1.textContent = '导航视图每行显示数量' + suffix;
+            if (l2) l2.textContent = '总览视图每行显示数量' + suffix;
+            enhanceSync();
+        }
+        function refreshGroupColsFromStyle(style) {
+            refreshGroupCols(style, style === 'link' ? 12 : 4, style === 'link' ? 12 : 4);
+        }
+        // 回显 range 滑块：设置 value 并同步显示数值
+        function setRange(id, valId, value) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = value;
+            const v = document.getElementById(valId);
+            if (v) v.textContent = value;
+        }
+
+        function openAddGroup() {
+            document.getElementById('group-modal-title').textContent = '新建分组';
+            document.getElementById('group-form').action = "{{ url_for('main.add_group') }}";
+            document.getElementById('g-name').value = '';
+            document.getElementById('g-icon').value = '';
+            document.getElementById('g-style').value = 'card';
+            refreshGroupCols('card', 4, 4);   // 新建默认横排卡片，导航/总览均每行 4 列
+            document.getElementById('g-fs').value = 'base';
+            document.getElementById('g-maxlen').value = 0;
+            // 默认：显示标题、行/列间距 16px
+            document.getElementById('g-show-title').checked = true;
+            setRange('g-rowgap', 'g-rowgap-val', 16);
+            setRange('g-colgap', 'g-colgap-val', 16);
+            setRange('g-dockscale', 'g-dockscale-val', 1.4);
+            enhanceSync();
+            document.getElementById('group-modal').showModal();
+        }
+        function openEditGroup(id) {
+            const row = document.querySelector('.group-row[data-id="' + id + '"]');
+            if (!row) return;
+            const d = row.dataset;
+            document.getElementById('group-modal-title').textContent = '编辑分组';
+            document.getElementById('group-form').action =
+                "{{ url_for('main.edit_group', group_id=0) }}".replace('/0/', '/' + id + '/');
+            document.getElementById('g-name').value = d.name || '';
+            document.getElementById('g-icon').value = d.icon || '';
+            const style = d.style || 'card';
+            document.getElementById('g-style').value = style;
+            // 按当前样式动态填充列数下拉，并选中该分组已设的值（矩形用 colsRect，横排用 cols）
+            const cols = parseInt(d.cols || '4', 10);
+            const colsRect = parseInt(d.colsRect || '12', 10);
+            // 总览视图专属列数（矩形用 colsRectOv，横排用 colsOv）；为空时回退到导航视图的值
+            const colsOv = parseInt(d.colsOv || d.cols || '4', 10);
+            const colsRectOv = parseInt(d.colsRectOv || d.colsRect || '12', 10);
+            refreshGroupCols(style, style === 'link' ? colsRect : cols, style === 'link' ? colsRectOv : colsOv);
+            document.getElementById('g-fs').value = d.fs || 'base';
+            document.getElementById('g-maxlen').value = d.maxlen || 0;
+            // 标题开关 / 行 / 列间距：按分组已存值回显
+            const showTitle = (d.showtitle === '1' || d.showtitle === 'true');
+            document.getElementById('g-show-title').checked = showTitle;
+            setRange('g-rowgap', 'g-rowgap-val', parseInt(d.rowgap || '16', 10));
+            setRange('g-colgap', 'g-colgap-val', parseInt(d.colgap || '16', 10));
+            setRange('g-dockscale', 'g-dockscale-val', parseFloat(d.dockscale || '1.4'));
+            enhanceSync();   // 同步美化后的下拉框显示
+            document.getElementById('group-modal').showModal();
+        }
+        function openDeleteGroup(id) {
+            const row = document.querySelector('.group-row[data-id="' + id + '"]');
+            const name = row ? (row.dataset.name || '') : '';
+            document.getElementById('delete-group-name').textContent = name;
+            document.getElementById('delete-group-form').action =
+                "{{ url_for('main.delete_group', group_id=0) }}".replace('/0/', '/' + id + '/');
+            document.getElementById('delete-group-modal').showModal();
+        }
+
+        // ---------- 设置弹窗 ----------
+        function openSettings() {
+            enhanceSync();   // 同步美化的下拉框（默认首页 / 打开方式）显示
+            document.getElementById('settings-modal').showModal();
+        }
+        // 保存用户资料（昵称 / 头像），成功后刷新以应用
+        function saveProfile() {
+            const nickname = document.getElementById('set-nickname').value.trim();
+            const avatar = document.getElementById('set-avatar').value.trim();
+            fetch("{{ url_for('main.settings_profile') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ nickname: nickname, avatar: avatar })
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') { location.reload(); }
+                else { alert(d.msg || '保存失败'); }
+            }).catch(e => console.error(e));
+        }
+        // 修改密码（校验当前密码 + 新密码强度 / 一致性），成功后提示并刷新
+        function openPassword() {
+            document.getElementById('pw-old').value = '';
+            document.getElementById('pw-new').value = '';
+            document.getElementById('pw-confirm').value = '';
+            document.getElementById('password-modal').showModal();
+        }
+        function savePassword() {
+            const oldp = document.getElementById('pw-old').value;
+            const newp = document.getElementById('pw-new').value;
+            const conf = document.getElementById('pw-confirm').value;
+            fetch("{{ url_for('main.settings_password') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ old_password: oldp, new_password: newp, confirm_password: conf })
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') {
+                    document.getElementById('password-modal').close();
+                    alert('密码已修改，请使用新密码重新登录。');
+                    location.reload();
+                } else { alert(d.msg || '修改失败'); }
+            }).catch(e => console.error(e));
+        }
+        // 保存系统设置：每行链接数 / 链接打开方式 / 默认首页 —— 统一由这一个按钮提交
+        // 注：旧版还读取过已被移除的 #set-days，会抛异常导致整个保存失效，这里已修正
+        function saveSystem() {
+            const open_in_new = document.getElementById('set-target').value;
+            const default_home = document.getElementById('set-home').value;
+            const cols_all = document.getElementById('set-cols-all').value;
+            const dock_all = document.getElementById('set-dockscale').value;
+            const csrf = csrfMeta();
+            // 先存系统设置（含「全部链接页每行数量」与「Dock 放大倍数」），再存默认首页，两者都成功才刷新页面
+            fetch("{{ url_for('main.settings_system') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                body: JSON.stringify({ open_in_new: open_in_new, links_per_row: cols_all, dock_scale: dock_all })
+            }).then(r => r.json()).then(d => {
+                if (d.status !== 'ok') { alert(d.msg || '保存失败'); return null; }
+                return fetch("{{ url_for('main.settings_home') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                    body: JSON.stringify({ default_home: default_home })
+                }).then(r2 => r2.json());
+            }).then(d2 => {
+                if (!d2) return;
+                if (d2.status === 'ok') { location.reload(); }
+                else { alert(d2.msg || '首页设置保存失败'); }
+            }).catch(e => console.error(e));
+        }
+
+        // ---------- 数据导入 / 导出 ----------
+        function exportData(fmt) {
+            // 直接触发浏览器下载（后端以 attachment 返回文件）
+            const url = "{{ url_for('main.data_export', fmt='FMT') }}".replace('FMT', fmt);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        function importData() {
+            const input = document.getElementById('import-file');
+            const msg = document.getElementById('import-msg');
+            const btn = document.getElementById('import-btn');
+            const file = input.files && input.files[0];
+            if (!file) { msg.textContent = '请先选择文件'; msg.style.color = 'hsl(var(--er))'; return; }
+            const fd = new FormData();
+            fd.append('file', file);
+            btn.disabled = true;
+            msg.textContent = '导入中…'; msg.style.color = 'hsl(var(--bc) / .7)';
+            fetch("{{ url_for('main.data_import') }}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfMeta() },
+                body: fd
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') {
+                    const s = d.stats || {};
+                    msg.textContent = `导入成功：分组 ${s.groups || 0} · 链接 ${s.links || 0} · 配色 ${s.themes || 0}`;
+                    msg.style.color = 'hsl(var(--su))';
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    msg.textContent = '失败：' + (d.msg || '未知错误');
+                    msg.style.color = 'hsl(var(--er))';
+                }
+            }).catch(e => {
+                msg.textContent = '请求失败：' + e;
+                msg.style.color = 'hsl(var(--er))';
+                console.error(e);
+            }).finally(() => { btn.disabled = false; });
+        }
+
+        // ---------- 全量备份 / 还原 ----------
+        function backupData() {
+            // 直接触发浏览器下载（后端以 attachment 返回 ZIP）
+            const url = "{{ url_for('main.data_backup') }}";
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        function restoreData() {
+            const input = document.getElementById('restore-file');
+            const msg = document.getElementById('restore-msg');
+            const btn = document.getElementById('restore-btn');
+            const file = input.files && input.files[0];
+            if (!file) { msg.textContent = '请先选择备份文件'; msg.style.color = 'hsl(var(--er))'; return; }
+            const fd = new FormData();
+            fd.append('file', file);
+            btn.disabled = true;
+            msg.textContent = '还原中…'; msg.style.color = 'hsl(var(--bc) / .7)';
+            fetch("{{ url_for('main.data_restore') }}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfMeta() },
+                body: fd
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') {
+                    const s = d.stats || {};
+                    msg.textContent = `还原成功：分组 ${s.groups || 0} · 链接 ${s.links || 0} · 配色 ${s.themes || 0}`;
+                    msg.style.color = 'hsl(var(--su))';
+                    setTimeout(() => location.reload(), 900);
+                } else {
+                    msg.textContent = '失败：' + (d.msg || '未知错误');
+                    msg.style.color = 'hsl(var(--er))';
+                }
+            }).catch(e => {
+                msg.textContent = '请求失败：' + e;
+                msg.style.color = 'hsl(var(--er))';
+                console.error(e);
+            }).finally(() => { btn.disabled = false; });
+        }
+
+        // ---------- 卡片背景色选择 ----------
+        function setBgPicker(value) {
+            value = value || '';
+            const hid = document.getElementById('f-bg-color');
+            if (hid) hid.value = value;
+            const swatches = document.querySelectorAll('#bg-picker .bg-swatch');
+            // 判断是否在预设色内
+            let inPreset = false;
+            swatches.forEach(function (s) {
+                const c = s.getAttribute('data-color');
+                if (c === null) return;               // 自定义取色器（无 data-color）
+                const match = (c === value);
+                if (match) inPreset = true;
+                s.classList.toggle('selected', match);
+            });
+            const custom = document.querySelector('#bg-picker .bg-custom');
+            if (custom) custom.classList.toggle('selected', !!value && !inPreset);
+        }
+        function pickBg(color) { setBgPicker(color); }
+        function pickCustomBg(value) { setBgPicker(value); }
+
+        // ---------- 标题文字颜色选择（默认 / 黑 / 白 / 自定义） ----------
+        function setTcPicker(value) {
+            value = (value || '').toUpperCase();
+            const hid = document.getElementById('f-title-color');
+            if (hid) hid.value = value;
+            let inPreset = false;
+            document.querySelectorAll('#tc-picker .bg-swatch').forEach(function (s) {
+                const c = s.getAttribute('data-color');
+                if (c === null) return;               // 自定义取色器（无 data-color）
+                const match = (c.toUpperCase() === value);
+                if (match) inPreset = true;
+                s.classList.toggle('selected', match);
+            });
+            const custom = document.querySelector('#tc-picker .bg-custom');
+            if (custom) custom.classList.toggle('selected', !!value && !inPreset);
+        }
+        function pickTc(color) { setTcPicker(color); }
+        function pickCustomTc(value) { setTcPicker(value); }
+
+        // ---------- 根据 URL 抓取目标网站标题 ----------
+        function fetchTitle() {
+            const urlEl = document.getElementById('f-url');
+            const titleEl = document.getElementById('f-title');
+            const btn = document.getElementById('fetch-title-btn');
+            const url = (urlEl.value || '').trim();
+            if (!url || url === 'https://' || url === 'http://') {
+                alert('请先填写完整的 URL 再获取标题。');
+                urlEl.focus();
+                return;
+            }
+            btn.disabled = true;
+            btn.classList.add('is-loading');
+            fetch("{{ url_for('main.fetch_title') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ url: url })
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok' && d.title) { titleEl.value = d.title; }
+                else { alert(d.msg || '获取标题失败，请手动填写。'); }
+            }).catch(e => {
+                console.error(e);
+                alert('获取标题失败，请手动填写。');
+            }).finally(() => {
+                btn.disabled = false;
+                btn.classList.remove('is-loading');
+            });
+        }
+        // ---------- 开放注册开关 ----------
+        function saveRegisterOpen(checked) {
+            fetch("{{ url_for('main.settings_register_open') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ open: checked ? 1 : 0 })
+            }).then(r => r.json()).then(d => {
+                if (d.status !== 'ok') { alert(d.msg || '保存失败'); }
+            }).catch(e => console.error(e));
+        }
+
+        // ---------- 美化下拉框：把原生 <select> 换成统一样式的触发钮 + 弹出列表 ----------
+        function syncSelTrigger(sel, trig) {
+            const cur = sel.options[sel.selectedIndex];
+            const txt = trig.querySelector('.st-text');
+            if (txt) txt.textContent = cur ? cur.textContent : '';
+        }
+        function renderSelOpts(sel, pop, trig, wrap) {
+            pop.innerHTML = '';
+            Array.prototype.forEach.call(sel.options, function (opt) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'select-opt' + (opt.value === sel.value ? ' selected' : '');
+                b.textContent = opt.textContent;
+                b.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    sel.value = opt.value;
+                    syncSelTrigger(sel, trig);
+                    wrap.classList.remove('open');
+                    sel.dispatchEvent(new Event('change'));
+                    if (window.lucide) lucide.createIcons();
+                });
+                pop.appendChild(b);
+            });
+            if (window.lucide) lucide.createIcons();
+        }
+        function enhanceSelects() {
+            document.querySelectorAll('select.select:not([data-enhanced])').forEach(function (sel) {
+                sel.setAttribute('data-enhanced', '1');
+                sel.style.display = 'none';
+                const wrap = document.createElement('div');
+                wrap.className = 'select-wrap';
+                const trig = document.createElement('button');
+                trig.type = 'button';
+                trig.className = 'select-trigger';
+                trig.innerHTML = '<span class="st-text"></span><i data-lucide="chevron-down" class="st-ic"></i>';
+                const pop = document.createElement('div');
+                pop.className = 'select-pop';
+                wrap.appendChild(trig);
+                wrap.appendChild(pop);
+                sel.parentNode.insertBefore(wrap, sel);
+                wrap.appendChild(sel);   // 把原生 select 移入 wrap（隐藏但仍参与表单提交）
+                trig.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    const open = wrap.classList.toggle('open');
+                    if (open) renderSelOpts(sel, pop, trig, wrap);
+                });
+                sel.addEventListener('change', function () { syncSelTrigger(sel, trig); });
+                syncSelTrigger(sel, trig);
+            });
+            if (window.lucide) lucide.createIcons();
+        }
+        // 程序化修改 select.value 后（如 openEdit 预设分组），刷新美化触发钮文案
+        function enhanceSync() {
+            document.querySelectorAll('select.select[data-enhanced]').forEach(function (sel) {
+                const wrap = sel.closest('.select-wrap');
+                if (wrap) syncSelTrigger(sel, wrap.querySelector('.select-trigger'));
+            });
+        }
+
+        // ---------- 浏览 / 编辑 模式切换 ----------
+        // 模式仅由顶部「编辑模式」图标切换；用 localStorage 持久化，切换分组 / 刷新页面后仍保持原模式
+        const EDIT_STORE_KEY = 'eiger.editMode';
+        function setEditMode(on) {
+            document.body.classList.toggle('edit-mode', on);
+            const btn = document.getElementById('edit-toggle');
+            if (btn) btn.classList.toggle('is-active', on);
+            if (sortableInstance) sortableInstance.option('disabled', !on);
+            if (groupSortable) groupSortable.option('disabled', !on);
+            updateBatchBar();
+            try { localStorage.setItem(EDIT_STORE_KEY, on ? '1' : '0'); } catch (e) {}
+        }
+        function getSavedEditMode() {
+            try { return localStorage.getItem(EDIT_STORE_KEY); } catch (e) { return null; }
+        }
+        function toggleEditMode() {
+            setEditMode(!document.body.classList.contains('edit-mode'));
+        }
+
+        // ---------- 批量操作 ----------
+        function getCheckedIds() {
+            return Array.from(document.querySelectorAll('.link-checkbox:checked'))
+                .map(c => parseInt(c.value, 10));
+        }
+        function updateBatchBar() {
+            const bar = document.getElementById('batch-bar');
+            const editing = document.body.classList.contains('edit-mode');
+            if (bar) bar.style.display = editing ? 'flex' : 'none';
+            const cnt = document.getElementById('batch-count');
+            if (cnt) cnt.textContent = getCheckedIds().length;
+        }
+        function batchSelectAll() {
+            const boxes = document.querySelectorAll('.link-checkbox');
+            const allChecked = Array.from(boxes).every(b => b.checked);
+            boxes.forEach(b => { b.checked = !allChecked; });
+            updateBatchBar();
+        }
+        function postBatch(payload) {
+            fetch("{{ url_for('main.batch_links') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') { location.reload(); }
+                else { alert(d.msg || '操作失败'); }
+            }).catch(e => console.error(e));
+        }
+        function batchMove() {
+            const ids = getCheckedIds();
+            if (!ids.length) return;
+            const gid = document.getElementById('batch-group').value;
+            postBatch({ action: 'move', ids: ids, group_id: gid ? parseInt(gid, 10) : null });
+        }
+        function batchDelete() {
+            const ids = getCheckedIds();
+            if (!ids.length) return;
+            if (!confirm('确认删除选中的 ' + ids.length + ' 个链接？此操作不可撤销。')) return;
+            postBatch({ action: 'delete', ids: ids });
+        }
+
+        // ---------- 自定义配色 ----------
+        function saveCustomTheme() {
+            const payload = {
+                name: document.getElementById('ct-name').value.trim(),
+                primary: document.getElementById('ct-primary').value,
+                secondary: document.getElementById('ct-secondary').value,
+                background: document.getElementById('ct-background').value,
+                text: document.getElementById('ct-text').value,
+            };
+            fetch("{{ url_for('main.custom_theme_create') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') { location.reload(); }
+                else { alert(d.msg || '保存失败'); }
+            }).catch(e => console.error(e));
+        }
+        function deleteCustomTheme(id) {
+            if (!confirm('确认删除该自定义配色？')) return;
+            fetch("{{ url_for('main.custom_theme_delete', cid=0) }}".replace('/0/', '/' + id + '/'), {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfMeta() }
+            }).then(r => r.json()).then(d => {
+                if (d.status === 'ok') { location.reload(); }
+                else { alert(d.msg || '删除失败'); }
+            }).catch(e => console.error(e));
+        }
+
+        // ---------- 回到顶部：滚动右侧长内容区域到顶部 ----------
+        function scrollContentTop() {
+            const c = document.querySelector('.drawer-content');
+            if (c && c.scrollHeight > c.clientHeight) {
+                c.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        // ---------- 自定义悬停提示框（替代原生 title，矩形卡片专用） ----------
+        function initTooltip() {
+            const tip = document.createElement('div');
+            tip.className = 'nav-tooltip';
+            tip.setAttribute('role', 'tooltip');
+            tip.innerHTML = '<span class="nt-title"></span><span class="nt-note" hidden></span>';
+            document.body.appendChild(tip);
+            const tipTitle = tip.querySelector('.nt-title');
+            const tipNote = tip.querySelector('.nt-note');
+            let hideTimer = null;
+
+            const place = (x, y) => {
+                // 先显示以获取真实尺寸，再据视口边缘翻转方向
+                const r = tip.getBoundingClientRect();
+                const pad = 14;
+                let left = x + pad;
+                let top = y + pad;
+                if (left + r.width > window.innerWidth - 8) left = x - r.width - pad;
+                if (top + r.height > window.innerHeight - 8) top = y - r.height - pad;
+                tip.style.left = Math.max(8, left) + 'px';
+                tip.style.top = Math.max(8, top) + 'px';
+            };
+
+            const show = (card, x, y) => {
+                if (document.body.classList.contains('edit-mode')) return; // 编辑模式不干扰
+                const title = (card.dataset.title || '').trim();
+                const note = (card.dataset.note || '').trim();
+                if (!title && !note) return;
+                tipTitle.textContent = title;
+                if (note) {
+                    tipNote.textContent = note;
+                    tipNote.hidden = false;
+                } else {
+                    tipNote.hidden = true;
+                }
+                tip.classList.add('is-visible');
+                place(x, y);
+            };
+
+            const hide = () => tip.classList.remove('is-visible');
+
+            document.addEventListener('mouseover', (e) => {
+                const card = e.target.closest('.grid--link .link-card');
+                if (!card) return;
+                clearTimeout(hideTimer);
+                show(card, e.clientX, e.clientY);
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!tip.classList.contains('is-visible')) return;
+                if (e.target.closest('.grid--link .link-card')) place(e.clientX, e.clientY);
+            });
+            document.addEventListener('mouseout', (e) => {
+                const card = e.target.closest('.grid--link .link-card');
+                if (!card) return;
+                const to = e.relatedTarget && e.relatedTarget.closest
+                    ? e.relatedTarget.closest('.grid--link .link-card') : null;
+                if (to === card) return; // 在卡片内部子元素间移动，不隐藏
+                hideTimer = setTimeout(hide, 60);
+            });
+            // 滚动 / 缩放时立即隐藏，避免提示框错位
+            window.addEventListener('scroll', hide, true);
+            window.addEventListener('resize', hide);
+        }
+
+        // ---------- macOS Dock 风格放大（鼠标邻近的卡片平滑放大，邻近者随之微涨） ----------
+        function initDock() {
+            // 支持多个网格（总览视图下每个分组各一个），逐个绑定 Dock 放大
+            const grids = document.querySelectorAll('.drawer-content .nav-grid');
+            grids.forEach(function (grid) {
+                if (!grid) return;
+                const cards = grid.querySelectorAll('.link-card');
+                const isRect = grid.classList.contains('grid--link');
+                // 横排卡片是宽行：若对其整体做「邻近 Dock 缩放」，鼠标每移动一帧都会重设 transform，
+                // 配合 .3s 过渡会形成明显的拖影/卡顿（宽卡缩放幅度大、追赶感强）。
+                // 故 Dock 邻近放大仅作用于矩形网格（图标方块）；横排卡片仅用「悬停上浮 + 图标微缩放」反馈。
+                if (!isRect) {
+                    cards.forEach(function (c) { c.style.setProperty('--dock-scale', '1'); c.style.zIndex = ''; });
+                    return;
+                }
+                const base = parseFloat(grid.dataset.dockScale) || 1.4;
+                const MAX = base;
+                const RADIUS = 220;    // 影响半径（px），超出则无放大
+                let rafId = null, lastEvt = null;
+                function apply(e) {
+                    rafId = null;
+                    const cards = grid.querySelectorAll('.link-card');
+                    if (document.body.classList.contains('edit-mode')) {
+                        cards.forEach(c => { c.style.setProperty('--dock-scale', '1'); c.style.zIndex = ''; });
+                        return;
+                    }
+                    const mx = e.clientX, my = e.clientY;
+                    for (const card of cards) {
+                        const r = card.getBoundingClientRect();
+                        const cx = r.left + r.width / 2;
+                        const cy = r.top + r.height / 2;
+                        const d = Math.hypot(mx - cx, my - cy);
+                        let s = 1;
+                        if (d < RADIUS) {
+                            const t = 1 - d / RADIUS;     // 0..1，越靠近中心越大
+                            s = 1 + t * t * (MAX - 1);     // 平方曲线 → 中心凸起更明显（Dock 手感）
+                        }
+                        card.style.setProperty('--dock-scale', s.toFixed(3));
+                        card.style.zIndex = s > 1.08 ? '5' : '';
+                    }
+                }
+                grid.addEventListener('mousemove', function (e) {
+                    lastEvt = e;
+                    if (rafId === null) rafId = requestAnimationFrame(function () { apply(lastEvt); });
+                });
+                grid.addEventListener('mouseleave', function () {
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    grid.querySelectorAll('.link-card').forEach(function (c) {
+                        c.style.setProperty('--dock-scale', '1'); c.style.zIndex = '';
+                    });
+                });
+            });
+        }
+
+        // ---------- 总览视图：滚动定位（scroll-spy），左侧分组导航随滚动高亮，点击平滑滚动 ----------
+        function initScrollSpy() {
+            const sections = Array.prototype.slice.call(document.querySelectorAll('.ov-section'));
+            if (!sections.length) return;   // 非总览视图直接退出
+            const container = document.querySelector('.drawer-content');
+            const scroller = (container && container.scrollHeight > container.clientHeight + 4) ? container : window;
+            // 侧栏带 data-spy 的元素（分组行 + 未分组项），用于高亮与点击滚动
+            const spyEls = Array.prototype.slice.call(document.querySelectorAll('[data-spy]'));
+            const byId = {};
+            spyEls.forEach(function (el) { byId[el.getAttribute('data-spy')] = el; });
+            const lineRatio = 0.3;   // 取可视区 30% 处作为"当前段"判定线
+
+            function currentId() {
+                const st = scroller === window ? window.scrollY : scroller.scrollTop;
+                const line = st + (scroller === window ? window.innerHeight : scroller.clientHeight) * lineRatio;
+                let cur = sections.length ? sections[0].getAttribute('data-sec') : null;
+                sections.forEach(function (sec) {
+                    const topAbs = sec.getBoundingClientRect().top + st;  // 段顶的绝对位置
+                    if (topAbs <= line) cur = sec.getAttribute('data-sec');
+                });
+                return cur;
+            }
+            function highlight() {
+                const id = currentId();
+                spyEls.forEach(function (el) {
+                    el.classList.toggle('active', el.getAttribute('data-spy') === id);
+                });
+            }
+            let ticking = false;
+            scroller.addEventListener('scroll', function () {
+                if (!ticking) { ticking = true; requestAnimationFrame(function () { highlight(); ticking = false; }); }
+            }, { passive: true });
+
+            // 点击侧栏分组 → 平滑滚动到对应段（带顶部偏移，避开固定导航）
+            spyEls.forEach(function (el) {
+                const anchor = el.tagName === 'A' ? el : el.querySelector('.group-link');
+                if (!anchor) return;
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const sec = document.getElementById('sec-' + el.getAttribute('data-spy'));
+                    if (!sec) return;
+                    const st = scroller === window ? window.scrollY : scroller.scrollTop;
+                    const topAbs = sec.getBoundingClientRect().top + st;
+                    const target = Math.max(0, topAbs - 16);
+                    if (scroller === window) window.scrollTo({ top: target, behavior: 'smooth' });
+                    else scroller.scrollTo({ top: target, behavior: 'smooth' });
+                });
+            });
+            highlight();
+        }
+
+        // ---------- 拖拽排序绑定（仅编辑模式启用） ----------
+        document.addEventListener('DOMContentLoaded', function () {
+            const grid = document.getElementById('sortable-grid');
+            if (grid && window.Sortable) {
+                sortableInstance = new Sortable(grid, {
+                    animation: 320,   // 落位补间加长到 .32s，更顺滑
+                    disabled: true,   // 默认浏览模式：禁止拖拽
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',  // 跟随指针的抬升卡片样式（用 box-shadow 表现，避免覆盖 Sortable 的内联 transform）
+                    onEnd: function () {
+                        const order = Array.from(grid.children)
+                            .map(el => parseInt(el.dataset.id, 10))
+                            .filter(id => !isNaN(id));
+                        fetch("{{ url_for('main.update_order') }}", {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                            },
+                            body: JSON.stringify({ order: order })
+                        })
+                        .then(r => r.json())
+                        .then(data => console.log('排序保存成功:', data))
+                        .catch(err => console.error('排序保存失败:', err));
+                    }
+                });
+            }
+            // 侧栏分组拖拽排序（编辑模式才启用；仅对 #group-list 内的分组行排序）
+            const groupList = document.getElementById('group-list');
+            if (groupList && window.Sortable) {
+                groupSortable = new Sortable(groupList, {
+                    animation: 320,   // 分组拖拽过渡 .32s
+                    handle: '.group-row',
+                    disabled: !document.body.classList.contains('edit-mode'),
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',
+                    onEnd: function () {
+                        const order = Array.from(groupList.querySelectorAll('.group-row'))
+                            .map(el => parseInt(el.dataset.id, 10))
+                            .filter(id => !isNaN(id));
+                        fetch("{{ url_for('main.group_update_order') }}", {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                            },
+                            body: JSON.stringify({ order: order })
+                        })
+                        .then(r => r.json())
+                        .then(data => console.log('分组排序保存成功:', data))
+                        .catch(err => console.error('分组排序保存失败:', err));
+                    }
+                });
+            }
+            // 勾选变化实时更新计数
+            document.addEventListener('change', function (e) {
+                if (e.target && e.target.classList.contains('link-checkbox')) {
+                    const card = e.target.closest('.link-card');
+                    if (card) card.classList.toggle('is-checked', e.target.checked);
+                    updateBatchBar();
+                }
+            });
+            // 所有弹窗：点击遮罩（dialog 本体而非卡片）即关闭
+            document.querySelectorAll('dialog.modal').forEach(function (d) {
+                d.addEventListener('click', function (e) {
+                    if (e.target === d) d.close();
+                });
+            });
+            // 美化下拉框：将原生 select 升级为统一样式的弹出列表
+            enhanceSelects();
+            // macOS Dock 风格：鼠标滑过链接卡片时平滑放大邻近卡片
+            initDock();
+            // 自定义悬停提示框（替代原生 title，矩形卡片更精致的交互）
+            initTooltip();
+            // 总览视图：滚动时左侧分组导航自动定位（scroll-spy）
+            initScrollSpy();
+            // 恢复编辑模式（仅仪表盘）：切换分组 / 刷新后保持上一模式，模式只由顶部图标切换
+            if (grid && getSavedEditMode() === '1') setEditMode(true);
+            // 点击空白处 / 按 Esc 关闭已展开的下拉列表
+            document.addEventListener('click', function (e) {
+                document.querySelectorAll('.select-wrap.open').forEach(function (w) {
+                    if (!w.contains(e.target)) w.classList.remove('open');
+                });
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.select-wrap.open').forEach(function (w) {
+                        w.classList.remove('open');
+                    });
+                }
+            });
+        });
+    </script>
+{% endblock %}

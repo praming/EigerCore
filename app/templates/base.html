@@ -1,0 +1,286 @@
+{# base.html —— 基础布局模板（所有页面继承它） #}
+{# 本模板使用 Jinja2：双花括号输出变量（默认自动转义防 XSS），百分号大括号是控制语句 #}
+<!DOCTYPE html>
+{# data-theme 由上下文处理器 ui_theme 注入（用户保存的主题配色，未登录回退 light） #}
+<html lang="zh-CN" data-theme="{{ ui_theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_name or 'Eiger' }}{% endblock %}</title>
+
+    {# CSRF 令牌：供前端 fetch（如拖拽排序 /update-order、设置接口）通过 X-CSRFToken 头提交 #}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    {# ===== 本地编译样式（无任何 CDN 依赖；由 tailwind.config.js + src/input.css 编译生成） ===== #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v={{ css_ver }}">
+
+    {# 自定义配色激活时，把用户保存的颜色以 HSL 注入 CSS 变量（覆盖默认主题） #}
+    {% if custom_theme %}
+        <style id="custom-vars">html[data-theme="custom"]{
+            --p:{{ custom_theme.p }}; --s:{{ custom_theme.s }};
+            --b1:{{ custom_theme.b1 }}; --b2:{{ custom_theme.b2 }};
+            --bc:{{ custom_theme.bc }}; --pc:{{ custom_theme.pc }};
+            --a:{{ custom_theme.a }}; --af:{{ custom_theme.af }};
+        }</style>
+    {% endif %}
+
+    {# ============ 自适应网格样式（每行链接数可配置，见 main.css 的 .nav-grid） ============ #}
+    {% block head_extra %}{% endblock %}
+</head>
+
+<body class="bg-surface">
+
+    {% block topnav %}
+    {# ============ 顶部导航栏（毛玻璃 / 纤细 / 吸顶） ============ #}
+    <div class="app-nav">
+        {# 左侧：移动端抽屉开关（仅登录后显示，lg 以上隐藏）+ 站点标题 #}
+        <div class="flex-none flex items-center gap-1">
+            {% if current_user.is_authenticated %}
+                {# label 绑定到 dashboard 里的 #main-drawer 复选框，控制抽屉开合 #}
+                <label for="main-drawer" class="icon-btn lg:hidden" aria-label="打开菜单">
+                    <i data-lucide="menu"></i>
+                </label>
+            {% endif %}
+            <a class="brand-logo">
+                <span class="logo-mark"><i data-lucide="mountain"></i></span>
+                <span class="hidden sm:inline">{{ site_name or 'Eiger' }}</span>
+            </a>
+
+            {# 顶层分类切换器：导航 / 工作台 / 资讯。阶段 0 仅「导航」可用，其余为禁用占位 #}
+            <div class="cat-switch" role="group" aria-label="分类切换">
+                {% for cat in categories %}
+                    {% if cat.enabled %}
+                        <a href="{{ url_for('main.dashboard', view='nav') }}"
+                           class="cat-btn {{ 'is-active' if cat.id == current_category }}"
+                           title="{{ cat.name }}" aria-pressed="{{ 'true' if cat.id == current_category else 'false' }}">
+                            <i data-lucide="{{ cat.icon }}"></i>
+                            <span class="hidden md:inline">{{ cat.name }}</span>
+                        </a>
+                    {% else %}
+                        <span class="cat-btn is-disabled" title="即将上线：{{ cat.name }}">
+                            <i data-lucide="{{ cat.icon }}"></i>
+                            <span class="hidden md:inline">{{ cat.name }}</span>
+                        </span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        {# 中部：搜索框（仅登录后显示，实时过滤右侧链接卡片） #}
+        <div class="flex-1 flex justify-center px-2">
+            {% if current_user.is_authenticated %}
+                <div class="nav-search hidden sm:flex">
+                    <i data-lucide="search" class="ns-icon"></i>
+                    <input id="nav-search" type="search" placeholder="搜索链接名称或地址…"
+                           oninput="onNavSearch()" aria-label="搜索链接">
+                </div>
+            {% endif %}
+        </div>
+
+        {# 右侧：新增链接 + 主题切换 +（登录后）编辑模式 / 设置 / 头像昵称 / 退出 #}
+        <div class="flex-none flex items-center gap-1.5 sm:gap-2">
+            {% if current_user.is_authenticated %}
+                {# 新增链接按钮已移至内容页头部（与分组名称、链接数同行），此处不再显示 #}
+            {% endif %}
+
+            {# 深色 / 浅色 快速切换按钮 #}
+            <button type="button" class="icon-btn" onclick="toggleTheme()" aria-label="切换深色/浅色">
+                <i data-lucide="sun" id="theme-sun"></i>
+                <i data-lucide="moon" id="theme-moon" class="hidden"></i>
+            </button>
+
+            {# 视图模式切换：导航（单组）/ 总览（单页全展示，滚动自动定位） #}
+            <div class="view-switch" role="group" aria-label="视图模式">
+                <a href="{{ url_for('main.dashboard', view='nav') }}"
+                   class="icon-btn {{ 'is-active' if current_view == 'nav' }}"
+                   title="导航视图" aria-label="导航视图" aria-pressed="{{ 'true' if current_view == 'nav' else 'false' }}">
+                    <i data-lucide="compass"></i>
+                </a>
+                <a href="{{ url_for('main.dashboard', view='overview') }}"
+                   class="icon-btn {{ 'is-active' if current_view == 'overview' }}"
+                   title="总览视图" aria-label="总览视图" aria-pressed="{{ 'true' if current_view == 'overview' else 'false' }}">
+                    <i data-lucide="layers"></i>
+                </a>
+            </div>
+
+            {% if current_user.is_authenticated %}
+                {# 浏览 / 编辑 模式切换（toggleEditMode 定义在 dashboard 脚本中） #}
+                <button type="button" id="edit-toggle" class="icon-btn" onclick="toggleEditMode()" aria-label="编辑模式" title="编辑模式">
+                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                </button>
+                {# 设置按钮：打开设置弹窗（openSettings 定义在 dashboard 脚本中） #}
+                <button type="button" class="icon-btn" onclick="openSettings()" aria-label="设置">
+                    <i data-lucide="settings"></i>
+                </button>
+                {# 头像或默认图标 + 昵称 #}
+                {% if current_user.avatar %}
+                    <div class="user-pill">
+                        <div class="avatar">
+                            <img src="{{ current_user.avatar }}" alt="头像">
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="user-pill">
+                        <i data-lucide="user" class="w-4 h-4 opacity-70"></i>
+                        <span class="u-name">{{ current_user.nickname or current_user.username }}</span>
+                    </div>
+                {% endif %}
+                <a href="{{ url_for('main.logout') }}" class="btn btn-outline btn-sm ml-1">退出</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endblock %}
+
+    {# ============ 全局 Flash 消息（DaisyUI 风格 Alert，现为本地样式） ============ #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="toast">
+                {% for category, msg in messages %}
+                    {# 分类映射：success→alert-success，其余（如 error）→alert-error #}
+                    <div class="alert {{ 'alert-success' if category == 'success' else 'alert-error' }} shadow-lg">
+                        <span>{{ msg }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    {# ============ 页面主体（各子模板填充） ============ #}
+    {% block mainarea %}
+    <main class="main p-3 sm:p-6">
+        {% block content %}{% endblock %}
+    </main>
+    {% endblock %}
+
+    {# ============ 本地 Lucide 图标库（替代 unpkg CDN） ============ #}
+    <script src="{{ url_for('static', filename='js/lucide.min.js') }}"></script>
+
+    {# ============ 脚本区（子模板可追加 JS） ============ #}
+    {% block scripts %}{% endblock %}
+
+    {# ============ 全局脚本：主题应用 / 切换 / 图标初始化 ============ #}
+    <script>
+        // 读取 CSRF 令牌（供 fetch 的 X-CSRFToken 头使用）
+        function csrfMeta() {
+            var m = document.querySelector('meta[name="csrf-token"]');
+            return m ? m.getAttribute('content') : '';
+        }
+
+        // 设置主题：写入 <html data-theme> 并切换太阳/月亮图标
+        function setTheme(t) {
+            document.documentElement.setAttribute('data-theme', t);
+            // 离开自定义配色时，移除注入的 CSS 变量，回退到内置主题
+            if (t !== 'custom') {
+                var cv = document.getElementById('custom-vars');
+                if (cv) cv.remove();
+            }
+            var sun = document.getElementById('theme-sun');
+            var moon = document.getElementById('theme-moon');
+            if (sun && moon) {
+                if (t === 'dark') { sun.classList.add('hidden'); moon.classList.remove('hidden'); }
+                else { sun.classList.remove('hidden'); moon.classList.add('hidden'); }
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        // 应用自定义配色：把 HSL 变量注入 <style id="custom-vars"> 并切到 data-theme="custom"
+        function applyCustomTheme(p, s, b1, b2, bc, pc) {
+            document.documentElement.setAttribute('data-theme', 'custom');
+            var cv = document.getElementById('custom-vars');
+            if (!cv) {
+                cv = document.createElement('style');
+                cv.id = 'custom-vars';
+                document.head.appendChild(cv);
+            }
+            cv.textContent = 'html[data-theme="custom"]{--p:' + p + ';--s:' + s +
+                ';--b1:' + b1 + ';--b2:' + b2 + ';--bc:' + bc + ';--pc:' + pc + ';}';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        // 同步设置面板里主题色板的选中态
+        function updateChipActive(t) {
+            document.querySelectorAll('.theme-chip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.theme === t);
+            });
+        }
+
+        // 顶部"深色/浅色"快速切换：在 light 与 dark 之间切换并持久化
+        function toggleTheme() {
+            var cur = document.documentElement.getAttribute('data-theme') || 'light';
+            var next = (cur === 'light') ? 'dark' : 'light';
+            setTheme(next);
+            updateChipActive(next);
+            fetch("{{ url_for('main.settings_theme') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ theme: next })
+            }).catch(function (e) { console.error('主题保存失败', e); });
+        }
+
+        // 设置页"主题/配色"点击：应用指定主题（内置或自定义）并持久化
+        function applyTheme(t) {
+            // 自定义配色：从色板读取预存的 HSL 变量并注入
+            if (t.indexOf('custom:') === 0) {
+                var chip = document.querySelector('.theme-chip[data-theme="' + t + '"]');
+                if (chip) {
+                    applyCustomTheme(chip.dataset.p, chip.dataset.s, chip.dataset.b1,
+                        chip.dataset.b2, chip.dataset.bc, chip.dataset.pc);
+                } else {
+                    setTheme('light');   // 找不到对应色板则回退
+                }
+            } else {
+                setTheme(t);
+            }
+            updateChipActive(t);
+            fetch("{{ url_for('main.settings_theme') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta() },
+                body: JSON.stringify({ theme: t })
+            }).catch(function (e) { console.error('主题保存失败', e); });
+        }
+
+        // 自动消失的提示（Flash 消息）：延时后淡出并移除节点
+        function autoDismissToasts() {
+            var toasts = document.querySelectorAll('.toast .alert');
+            toasts.forEach(function (el) {
+                var remove = function () { if (el && el.parentNode) el.parentNode.removeChild(el); };
+                var leave = function () {
+                    // 尊重用户的“减少动态效果”偏好：直接移除，不做动画
+                    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                        remove(); return;
+                    }
+                    el.classList.add('is-leaving');
+                    el.addEventListener('transitionend', remove, { once: true });
+                    setTimeout(remove, 500); // 兜底：transitionend 未触发时仍移除
+                };
+                setTimeout(leave, 3500);
+            });
+        }
+
+        // 页面加载：按当前 data-theme 初始化图标显示，并渲染 Lucide 图标
+        document.addEventListener('DOMContentLoaded', function () {
+            setTheme(document.documentElement.getAttribute('data-theme') || 'light');
+            if (window.lucide) lucide.createIcons();
+            autoDismissToasts();
+        });
+
+        // 顶部搜索：实时过滤右侧链接卡片（按标题 / URL 包含匹配）
+        function onNavSearch() {
+            var box = document.getElementById('nav-search');
+            if (!box) return;
+            var q = box.value.trim().toLowerCase();
+            var cards = document.querySelectorAll('.link-card');
+            var shown = 0;
+            cards.forEach(function (c) {
+                var t = (c.dataset.title || '').toLowerCase();
+                var u = (c.dataset.url || '').toLowerCase();
+                var hit = !q || t.indexOf(q) !== -1 || u.indexOf(q) !== -1;
+                c.classList.toggle('is-hidden', !hit);
+                if (hit) shown++;
+            });
+            var empty = document.getElementById('search-empty');
+            if (empty) empty.style.display = (q && shown === 0) ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>

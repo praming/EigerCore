@@ -1,0 +1,67 @@
+{# login.html —— 登录页（左右分栏式现代布局，无 CDN / 无 DaisyUI） #}
+{% extends "base.html" %}
+
+{% block title %}登录 - {{ site_name or 'Eiger' }}{% endblock %}
+
+{# 登录 / 注册页不展示顶部导航栏（含 logo 与站点名），改用整页左右分栏布局 #}
+{% block topnav %}{% endblock %}
+{% block mainarea %}<main class="auth-screen">
+    <div class="auth-wrap">
+        {# ============ 左侧品牌区（桌面显示） ============ #}
+        <aside class="auth-aside">
+            <div class="auth-brand">
+                <span class="logo-mark"><i data-lucide="mountain"></i></span>
+                {{ site_name or 'Eiger' }}
+            </div>
+            <div>
+                <h2>把效率工具与常用入口，<br>收进同一处工作台。</h2>
+                <p>一个清爽的个人工作台：拖拽排布时钟、待办、天气、招投标聚合等小组件，顺手收纳常用网站导航。登录后即可开始组织你的一天。</p>
+            </div>
+            <div class="auth-quote">— 你的效率中枢，一处直达。</div>
+        </aside>
+
+        {# ============ 右侧表单区 ============ #}
+        <main class="auth-main">
+            <button type="button" class="auth-theme" onclick="toggleTheme()" aria-label="切换深色/浅色">
+                <i data-lucide="sun" id="theme-sun"></i>
+                <i data-lucide="moon" id="theme-moon" class="hidden"></i>
+            </button>
+            <div class="auth-card">
+                {# 移动端品牌小标题（桌面隐藏，因为左侧已有品牌区） #}
+                <div class="auth-mobile-head">
+                    <span class="logo-mark"><i data-lucide="mountain"></i></span> {{ site_name or 'Eiger' }}
+                </div>
+
+                <div class="auth-title">
+                    <span class="logo-mark"><i data-lucide="log-in"></i></span> 登录
+                </div>
+
+                {# 表单字段名 username / password 必须与 LoginForm 的字段名一致 #}
+                <form method="post" action="{{ url_for('main.login') }}">
+                    {{ form.csrf_token }}   {# CSRF 防护 #}
+
+                    <label class="form-control w-full my-3">
+                        <span class="label-text">用户名</span>
+                        <input type="text" name="username"
+                               class="input w-full" required autofocus>
+                    </label>
+
+                    <label class="form-control w-full my-3">
+                        <span class="label-text">密码</span>
+                        <input type="password" name="password"
+                               class="input w-full" required>
+                    </label>
+
+                    <div class="mt-5">
+                        <button type="submit" class="btn btn-primary w-full">登录</button>
+                    </div>
+                </form>
+
+                <p class="auth-switch">
+                    {% if allow_register %}还没有账号？<a href="{{ url_for('main.register') }}">去注册</a>{% endif %}
+                </p>
+            </div>
+        </main>
+    </div>
+</main>
+{% endblock %}

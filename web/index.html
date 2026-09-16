@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Python Nav</title>
+    <!-- 复用 Flask 已本地化的 lucide 图标数据（1743 个图标，含完整 svg 属性树）。
+         经典 script 先于 module script 执行，故 AppIcon 挂载时 window.lucide 必已就绪。
+         dev 期由 vite 代理 /static 到 Flask；生产期同域直取，避免把整个图标库打进 bundle。 -->
+    <script src="/static/js/lucide.min.js"></script>
+  </head>
+  <body class="bg-surface">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
