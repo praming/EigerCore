@@ -11,6 +11,9 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 # 再拷源码并构建（产物输出到 /build/dist）
 COPY web/ ./
+# 共享设计系统 input.css 由 app/ 提供，本地以 ../../app/static/src/input.css 引用；
+# 构建阶段仅拷贝了 web/，须同步该目录到相对路径对应的 /app/static/src/ 下，否则 vite 解析失败。
+COPY app/static/src/ /app/static/src/
 RUN npm run build
 
 # ============================================================
