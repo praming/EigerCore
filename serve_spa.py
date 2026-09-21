@@ -28,7 +28,9 @@ from run import app  # noqa: E402
 
 
 if __name__ == '__main__':
-    # debug=True 保留开发期错误页；但关闭 reloader —— 本环境下 reloader 父/子代理偶发
-    # IPv4/IPv6 绑定失配，导致线上请求 502「upstream connect failed」，故用单进程更稳定。
-    # 改文件后需手动重启本进程才能生效（不再自动重载）。
-    app.run(debug=True, use_reloader=False, host='127.0.0.1', port=5000)
+    # 仅当显式设置 FLASK_DEBUG=1 才开启调试模式；默认关闭，避免在生产中误用本脚本
+    # 而被 Werkzeug 调试器远程代码执行（RCE）漏洞影响。生产请用 gunicorn（见 README / Dockerfile）。
+    # 关闭 reloader：本环境下 reloader 父/子代理偶发 IPv4/IPv6 绑定失配，导致请求 502，
+    # 故单进程更稳定；改文件后需手动重启本进程才能生效。
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(debug=debug, use_reloader=False, host='127.0.0.1', port=5000)

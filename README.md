@@ -276,6 +276,36 @@ sudo nginx -t && sudo systemctl reload nginx
 
 > 各面板 UI 文案随版本略有差异，但核心三要素一致：**启动模块 `serve_spa:app` + 端口 `5000` + 环境变量 `USE_SPA=1` 与 `SECRET_KEY`**，再把 Nginx 反代到 `127.0.0.1:5000`。
 
+#### 2.4 Docker（一键 / 可复现，推荐）
+
+EigerCore 官方提供 Docker 镜像，**单容器 + 一个数据卷**即可运行，无需额外数据库：
+
+1. **用 compose（推荐）**：把下方内容存为 `docker-compose.yml`，执行 `docker compose up -d` 即自动从 GitHub 仓库拉取并构建镜像、启动服务。
+   ```yaml
+   services:
+     nav:
+       image: praming/eigercore:latest
+       container_name: eigercore
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:5000:5000"   # 仅本机回环；由宿主 Nginx / 宝塔 / 1Panel 反代到 80/443
+       volumes:
+         - nav-instance:/app/instance
+       healthcheck:
+         test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+         interval: 30s
+         timeout: 5s
+         retries: 3
+         start_period: 20s
+   volumes:
+     nav-instance:
+   ```
+2. **直接用镜像**：`docker run -d --name eigercore -p 5000:5000 -v eigercore-data:/app/instance praming/eigercore:latest`。
+3. 启动后访问 `http://<宿主机>:5000`，**第一个注册账号自动成为管理员**。
+
+> 镜像默认内置 SQLite，所有可变数据（数据库、会话密钥、上传图标）均落在容器卷 `/app/instance`。**备份该卷即可完成备份与迁移，无需任何 `.env` 文件**；升级只需 `docker compose up -d --build` 重建镜像，数据不丢。
+> 将示例中的 `praming` 替换为你的 Docker Hub 用户名；锁定版本可用 `praming/eigercore:1.0.0` 之类的具体 tag。
+
 ---
 
 ### 3. 备份

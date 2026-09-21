@@ -30,7 +30,5 @@ ab_*.log
 nul
 overview.md
 
-# 容器相关自身（减小构建上下文；注意：docker-entrypoint.sh 必须保留，勿加入排除！）
-Dockerfile
-docker-compose.yml
-.dockerignore
+# 容器相关自身：docker-entrypoint.sh 必须保留在构建上下文中（勿加入排除！）；
+# Dockerfile / .dockerignore 由 docker 引擎单独处理，无需在此排除。

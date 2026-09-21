@@ -26,6 +26,9 @@ nul
 .env
 .env.local
 
+# ---- Private dev-only note (NOT for public repo) ----
+NOTE.md
+
 # ---- WorkBuddy internal (private project memory, machine-specific) ----
 .workbuddy/
 
