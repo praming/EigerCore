@@ -32,9 +32,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/eigercore
+          flavor: |
+            latest=false
           tags: |
+            # 仅保留精确版本与 latest，避免 1 / 1.0 等浮动标签误导
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push
@@ -45,6 +47,25 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    # 仅在 Docker 镜像成功推送后创建 Release，保证 GitHub Release 与 Docker Hub 同步
+    needs: build-and-push
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 自动根据自上次 Release 以来的提交生成发布说明
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-description:
     runs-on: ubuntu-latest
