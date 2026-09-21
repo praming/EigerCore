@@ -7,7 +7,7 @@ init_db.py —— 数据库初始化 / 迁移脚本
   - 若表已存在但缺新列（如老库的 user 缺 nickname/avatar、link 缺 group_id）：
     通过 ALTER TABLE 补齐，避免丢失已有数据。
 
-运行方式（在项目根目录 python-nav/ 下执行）：
+运行方式（在项目根目录 EigerCore/ 下执行）：
     python init_db.py
 """
 

@@ -28,7 +28,9 @@ from flask import current_app
 from .models import db, User, Link, Group, UserSettings, CustomTheme
 
 EXPORT_VERSION = 1
-APP_TAG = "python-nav"
+APP_TAG = "EigerCore"
+# 历史导出文件可能带旧标识 "python-nav"，导入时一并接受，避免旧备份无法恢复
+LEGACY_APP_TAGS = {"python-nav", "EigerCore"}
 
 # 允许的颜色格式：#rgb / #rrggbb
 _HEX_RE = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
@@ -288,7 +290,7 @@ def _parse_payload(data, fmt):
     else:
         return None, f"不支持的格式：{fmt}"
 
-    if not isinstance(obj, dict) or obj.get("app") != APP_TAG:
+    if not isinstance(obj, dict) or obj.get("app") not in LEGACY_APP_TAGS:
         return None, "文件格式不匹配（非本应用导出文件）。"
     return obj, None
 
@@ -541,7 +543,7 @@ def restore_full(user, raw):
     except Exception as e:
         return None, f'backup.json 解析失败：{e}'
 
-    if not isinstance(payload, dict) or payload.get('app') != APP_TAG:
+    if not isinstance(payload, dict) or payload.get('app') not in LEGACY_APP_TAGS:
         return None, '备份文件格式不匹配（非本应用导出文件）。'
 
     # 1) 先恢复数据（数据库），失败则回滚、不写文件

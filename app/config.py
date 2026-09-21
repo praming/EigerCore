@@ -21,11 +21,11 @@ class Config:
     # ------------------------------------------------------------------
     # 2. 数据库地址（SQLAlchemy 使用）
     #    - 我们使用 SQLite，数据库文件放在项目根目录的 instance/ 文件夹下，名为 links.db。
-    #    - BASE_DIR 指向 python-nav 根目录（config.py 在 app/ 里，所以要向上退一级）。
+    #    - BASE_DIR 指向 EigerCore 根目录（config.py 在 app/ 里，所以要向上退一级）。
     #    - 提前创建 instance 目录，避免首次写入数据库时因目录不存在而报错。
     # ------------------------------------------------------------------
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # → python-nav/
-    INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')                       # → python-nav/instance/
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # → EigerCore/
+    INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')                       # → EigerCore/instance/
     os.makedirs(INSTANCE_DIR, exist_ok=True)                               # 目录不存在就创建
 
     # sqlite:/// 后面跟绝对路径，三个斜杠不能少

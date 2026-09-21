@@ -52,7 +52,7 @@ EigerCore 是一个**个人效率工作台**（Personal Workbench）。它把日
 ## 目录结构
 
 ```
-python-nav/
+EigerCore/
 ├── run.py                  # 启动入口（极简，调用 create_app 工厂）
 ├── init_db.py              # 数据库初始化脚本（生成 instance/links.db）
 ├── requirements.txt        # 依赖清单（已锁定版本）
@@ -86,7 +86,7 @@ python-nav/
 
 ```bash
 # 1. 进入项目目录
-cd python-nav
+cd EigerCore
 
 # 2. （推荐）创建并激活虚拟环境
 python -m venv venv

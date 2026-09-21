@@ -4,7 +4,7 @@ const require = createRequire(import.meta.url)
 const { chromium } = require('C:/Users/Praming/.workbuddy/binaries/node/workspace/node_modules/playwright-core')
 
 const BASE = 'http://127.0.0.1:5000'
-const OUT = 'D:/wwwroot/workbuddy/python-nav/_pw_shots'
+const OUT = 'D:/wwwroot/workbuddy/EigerCore/_pw_shots'
 fs.mkdirSync(OUT, { recursive: true })
 
 const EDGE_PATHS = [
