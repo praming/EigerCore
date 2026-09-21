@@ -165,4 +165,16 @@ def create_app(config_class=Config):
         from .categories import ordered_categories, default_category
         return dict(categories=ordered_categories(), current_category=default_category())
 
+    # 9) 反向代理支持：部署在 Nginx / 宝塔 / 1Panel 之后时，
+    #    让 Flask 正确识别真实客户端 IP 与协议（影响安全 Cookie、CSRF、外链生成、日志）。
+    #    仅信任直接上游（反代）注入的 X-Forwarded-* 头（单级反代 = 1 跳）。
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,    # X-Forwarded-For    → REMOTE_ADDR
+        x_proto=1,  # X-Forwarded-Proto  → wsgi.url_scheme（https）
+        x_host=1,   # X-Forwarded-Host   → HTTP_HOST
+        x_port=1,   # X-Forwarded-Port   → SERVER_PORT
+    )
+
     return app

@@ -1,0 +1,32 @@
+services:
+  nav:
+    build:
+      # 直接从 GitHub 仓库构建（部署机无需本地代码）：
+      #   docker compose up -d --build  会自动 git clone 该仓库并按其中的 Dockerfile 构建
+      context: https://github.com/praming/EigerCore.git
+      # 可选：固定到某次提交 / 标签以获得可复现构建，例如：
+      #   context: https://github.com/praming/EigerCore.git#v1.0.0
+    image: eigercore:latest
+    container_name: eigercore
+    restart: unless-stopped
+    # 用宿主 Nginx / 宝塔 / 1Panel 反代时，建议只暴露给本机回环（避免端口直接公网暴露）：
+    # ports:
+    #   - "127.0.0.1:5000:5000"
+    ports:
+      - "5000:5000"
+    environment:
+      USE_SPA: "1"
+      PORT: "5000"
+      # SECRET_KEY 无需配置：入口脚本会自动在 /app/instance/secret_key 生成并持久化
+    volumes:
+      # 唯一可变数据 / 设置目录：DB、密钥均在此；备份它即可完成迁移 / 重建
+      - nav-instance:/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  nav-instance:

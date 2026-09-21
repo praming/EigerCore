@@ -1,0 +1,36 @@
+# 依赖与构建缓存（容器内会重新生成，勿带入上下文）
+web/node_modules
+**/node_modules
+web/dist
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# 数据与密钥（绝不可进镜像）
+instance
+*.db
+*.db-*
+*.bak-*
+.env
+.venv
+venv
+
+# 版本库与工具元数据
+.git
+.gitignore
+.workbuddy
+
+# 构建/运行残留与根目录零散文件
+*.log
+_build.log
+build_err.txt
+col_check.txt
+server_*.log
+ab_*.log
+nul
+overview.md
+
+# 容器相关自身（减小构建上下文；注意：docker-entrypoint.sh 必须保留，勿加入排除！）
+Dockerfile
+docker-compose.yml
+.dockerignore
