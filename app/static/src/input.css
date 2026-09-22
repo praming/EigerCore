@@ -2302,6 +2302,8 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .wb-wl__lv { font-size: .76rem; white-space: nowrap; }
 .wb-wl__lv i { font-style: normal; font-size: .68rem; color: hsl(var(--bc) / .5); margin-right: .25rem; }
 .wb-wl__lv b { font-weight: 600; }
+/* 日涨跌后的当日收益金额（与涨跌同色，略缩以区分） */
+.wb-wl__pnl { font-size: .86em; font-weight: 500; opacity: .92; }
 .wb-wl__lv b.up { color: hsl(var(--er)); }
 .wb-wl__lv b.down { color: hsl(150 60% 38%); }
 /* 合计当日 / 合计总收益：正收益红、负收益绿（A 股习惯；与 .wb-wl__lv 配色一致） */
@@ -2349,7 +2351,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   background: hsl(var(--bc) / .35); padding: 1rem;
 }
 .wb-ipo__dialog {
-  width: min(26rem, 100%); max-height: 80vh; overflow: auto;
+  width: min(34rem, 100%); max-height: 80vh; overflow: auto;
   background: hsl(var(--b1)); border: 1px solid hsl(var(--bc) / .14);
   border-radius: .9rem; box-shadow: 0 18px 46px hsl(var(--bc) / .22);
 }
@@ -2362,13 +2364,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   font-size: 1rem; line-height: 1; padding: .2rem .4rem; border-radius: .5rem;
 }
 .wb-ipo__close:hover { background: hsl(var(--bc) / .08); color: hsl(var(--bc)); }
-.wb-ipo__list { list-style: none; margin: 0; padding: .4rem .6rem .8rem; }
-.wb-ipo__item { padding: .55rem .5rem; border-bottom: 1px solid hsl(var(--bc) / .08); }
+.wb-ipo__list { list-style: none; margin: 0; padding: .5rem .8rem .9rem; }
+.wb-ipo__item { padding: 1rem .6rem; border-bottom: 1px solid hsl(var(--bc) / .08); }
 .wb-ipo__item:last-child { border-bottom: 0; }
-.wb-ipo__name { font-weight: 700; font-size: .92rem; display: flex; align-items: baseline; gap: .4rem; }
+.wb-ipo__name { font-weight: 700; font-size: .92rem; display: flex; align-items: baseline; gap: .45rem; }
+.wb-ipo__board { font-size: .64rem; font-weight: 600; line-height: 1; padding: .2rem .42rem; border-radius: .42rem; color: hsl(var(--p)); background: hsl(var(--p) / .14); align-self: center; white-space: nowrap; }
 .wb-ipo__code { font-size: .72rem; color: hsl(var(--bc) / .5); font-weight: 500; }
-.wb-ipo__meta { margin-top: .3rem; display: flex; flex-wrap: wrap; gap: .3rem .8rem; font-size: .76rem; color: hsl(var(--bc) / .7); }
+.wb-ipo__meta { margin-top: .45rem; display: flex; flex-wrap: wrap; gap: .45rem 1.1rem; font-size: .76rem; color: hsl(var(--bc) / .7); }
 .wb-ipo__meta b { color: hsl(var(--bc)); font-weight: 600; }
+/* 申购日期后标注：周几（常规色）+ 相对标签（近三天红 / 三天外绿 / 过期灰），二者间距加大 */
+.wb-ipo__weekday { color: hsl(var(--bc) / .55); margin-left: .4rem; }
+.wb-ipo__rel { font-weight: 600; margin-left: .55rem; }
+.wb-ipo__rel--near { color: hsl(var(--er)); }
+.wb-ipo__rel--far { color: hsl(150 60% 38%); }
+.wb-ipo__rel--past { color: hsl(var(--bc) / .5); font-weight: 500; }
 .wb-ipo__empty { padding: .8rem .5rem; font-size: .82rem; }
 
 /* 天气卡片：自动刷新模式徽标 + 错误条 + 指定时间点列表 */

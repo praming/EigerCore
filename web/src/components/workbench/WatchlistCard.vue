@@ -218,6 +218,41 @@ const ipoModalList = computed<IpoItem[]>(() => {
   if (!d) return []
   return d.week.length ? d.week : d.all
 })
+
+const WEEK_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+/**
+ * 计算申购日期的相对标注（按当天本地日期计算，无需实时时钟）。
+ * - 近三天（0/1/2 天）→ 今天 / 明天 / 后天，红色（wb-ipo__rel--near）
+ * - 三天以外 → N天后，绿色（wb-ipo__rel--far）
+ * - 已过期 → 已过，灰色（wb-ipo__rel--past）
+ */
+function ipoApplyInfo(dateStr: string | undefined) {
+  if (!dateStr) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (!m) return null
+  const target = new Date(+m[1], +m[2] - 1, +m[3]) // 本地零时
+  const t = new Date()
+  const today = new Date(t.getFullYear(), t.getMonth(), t.getDate())
+  const diff = Math.round((target.getTime() - today.getTime()) / 86400000)
+  const weekday = WEEK_LABEL[target.getDay()]
+  if (diff < 0) return { weekday, rel: '已过', cls: 'wb-ipo__rel--past' }
+  if (diff === 0) return { weekday, rel: '今天', cls: 'wb-ipo__rel--near' }
+  if (diff === 1) return { weekday, rel: '明天', cls: 'wb-ipo__rel--near' }
+  if (diff === 2) return { weekday, rel: '后天', cls: 'wb-ipo__rel--near' }
+  return { weekday, rel: `${diff}天后`, cls: 'wb-ipo__rel--far' }
+}
+
+/** 依据股票代码推断板块标签（创业板 / 科创板 / 沪市 / 深市 / 北交所） */
+function ipoBoardTag(code: string | undefined): string {
+  if (!code) return ''
+  const c = code.trim()
+  if (/^68[89]/.test(c)) return '科创板'
+  if (/^30/.test(c)) return '创业板'
+  if (/^[89]|^92/.test(c)) return '北交所'
+  if (/^60/.test(c)) return '沪市'
+  if (/^00/.test(c)) return '深市'
+  return ''
+}
 </script>
 
 <template>
@@ -256,7 +291,7 @@ const ipoModalList = computed<IpoItem[]>(() => {
         </div>
         <div v-if="hasQuote(r)" class="wb-wl__line2">
           <span class="wb-wl__lv"><i>现价</i> <b>{{ r.current.toFixed(2) }}</b></span>
-          <span class="wb-wl__lv"><i>日涨跌</i> <b :class="r.changeAmount >= 0 ? 'up' : 'down'">{{ money(r.changeAmount) }}</b></span>
+          <span class="wb-wl__lv"><i>日涨跌</i> <b :class="r.changeAmount >= 0 ? 'up' : 'down'">{{ money(r.changeAmount) }}<span class="wb-wl__pnl">（{{ money(r.dailyPnl) }}）</span></b></span>
           <span class="wb-wl__lv"><i>涨跌幅</i> <b :class="r.changePct >= 0 ? 'up' : 'down'">{{ pct(r.changePct) }}</b></span>
           <span class="wb-wl__lv"><i>总收益</i> <b :class="r.totalPnl >= 0 ? 'up' : 'down'">{{ money(r.totalPnl) }}</b></span>
           <span class="wb-wl__lv"><i>收益率</i> <b :class="r.totalPct >= 0 ? 'up' : 'down'">{{ pct(r.totalPct) }}</b></span>
@@ -285,12 +320,15 @@ const ipoModalList = computed<IpoItem[]>(() => {
         <div v-if="ipoLoading" class="wb-muted" style="padding:.8rem">加载中…</div>
         <ul v-else class="wb-ipo__list">
           <li v-for="it in ipoModalList" :key="it.code" class="wb-ipo__item">
-            <div class="wb-ipo__name">{{ it.name }}<span class="wb-ipo__code">{{ it.code }}</span></div>
+            <div class="wb-ipo__name">
+              <span v-if="ipoBoardTag(it.code)" class="wb-ipo__board">{{ ipoBoardTag(it.code) }}</span>
+              {{ it.name }}<span class="wb-ipo__code">{{ it.code }}</span>
+            </div>
             <div class="wb-ipo__meta">
-              <span>申购 <b>{{ it.applyDate }}</b></span>
+              <span>申购 <b>{{ it.applyDate }}</b><span v-if="ipoApplyInfo(it.applyDate)" class="wb-ipo__weekday">{{ ipoApplyInfo(it.applyDate)?.weekday }}</span><span v-if="ipoApplyInfo(it.applyDate)" :class="ipoApplyInfo(it.applyDate)?.cls">（{{ ipoApplyInfo(it.applyDate)?.rel }}）</span></span>
               <span v-if="it.payDate">缴款 <b>{{ it.payDate }}</b></span>
               <span v-if="it.listDate">上市 <b>{{ it.listDate }}</b></span>
-              <span v-if="it.price">发行价 <b>{{ it.price }}</b></span>
+              <span>发行价：<b>{{ it.price || '暂无' }}</b></span>
             </div>
           </li>
           <li v-if="!ipoModalList.length" class="wb-muted wb-ipo__empty">未来一周暂无新股申购</li>
