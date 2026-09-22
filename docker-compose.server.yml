@@ -16,8 +16,8 @@ services:
       # 反代（Nginx/宝塔/1Panel）场景下建议仅暴露本机回环：
       # - "127.0.0.1:5000:5000"
     volumes:
-      # 宿主机目录 : 容器内 /app/instance（全部可变数据；修改为你服务器的实际路径）
-      - /opt/1panel/1panel/www/sites/work.gukong.net/index/data:/app/instance
+      # 宿主机目录 : 容器内 /app/instance（全部可变数据；把左侧改为你服务器的实际路径，先 mkdir -p）
+      - /srv/eigercore/data:/app/instance
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
       interval: 30s

@@ -278,32 +278,23 @@ sudo nginx -t && sudo systemctl reload nginx
 
 #### 2.4 Docker（一键 / 可复现，推荐）
 
-EigerCore 官方提供 Docker 镜像，**单容器 + 一个数据卷**即可运行，无需额外数据库：
+EigerCore 官方提供 Docker 镜像（Docker Hub：`praming/eigercore`），**单容器 + 一个数据卷**即可运行，无需额外数据库、也无需本地代码或构建：
 
-1. **用 compose（推荐）**：把下方内容存为 `docker-compose.yml`，执行 `docker compose up -d` 即自动从 GitHub 仓库拉取并构建镜像、启动服务。
-   ```yaml
-   services:
-     nav:
-       image: praming/eigercore:latest
-       container_name: eigercore
-       restart: unless-stopped
-       ports:
-         - "127.0.0.1:5000:5000"   # 仅本机回环；由宿主 Nginx / 宝塔 / 1Panel 反代到 80/443
-       volumes:
-         - nav-instance:/app/instance
-       healthcheck:
-         test: ["CMD", "curl", "-f", "http://localhost:5000/"]
-         interval: 30s
-         timeout: 5s
-         retries: 3
-         start_period: 20s
-   volumes:
-     nav-instance:
+1. **用仓库内置的 compose（推荐）**：克隆后直接执行，自动从 Docker Hub 拉取镜像并启动：
+   ```bash
+   git clone https://github.com/praming/EigerCore.git
+   cd EigerCore
+   docker compose up -d          # 拉取 praming/eigercore:latest 并启动（数据落在命名卷 eigercore-instance）
    ```
-2. **直接用镜像**：`docker run -d --name eigercore -p 5000:5000 -v eigercore-data:/app/instance praming/eigercore:latest`。
+   该 compose 采用**命名卷**持久化（数据由 Docker 托管）。如需把数据固定挂到宿主机指定目录，改用仓库附带的 bind mount 参考文件：
+   ```bash
+   docker compose -f docker-compose.server.yml up -d
+   ```
+   其中 `docker-compose.server.yml` 已用演示路径 `/srv/eigercore/data:/app/instance`，请按你的服务器把左侧改为实际目录（先 `mkdir -p` 该目录）。
+2. **直接用镜像**：`docker run -d --name eigercore -p 5000:5000 -v eigercore-instance:/app/instance praming/eigercore:latest`。
 3. 启动后访问 `http://<宿主机>:5000`，**第一个注册账号自动成为管理员**。
 
-> 镜像默认内置 SQLite，所有可变数据（数据库、会话密钥、上传图标）均落在容器卷 `/app/instance`。**备份该卷即可完成备份与迁移，无需任何 `.env` 文件**；升级只需 `docker compose up -d --build` 重建镜像，数据不丢。
+> 镜像默认内置 SQLite，所有可变数据（数据库、会话密钥、上传图标）均落在容器卷 `/app/instance`。**备份该卷即可完成备份与迁移，无需任何 `.env` 文件**；升级只需 `docker compose pull && docker compose up -d`（仓库 compose 已设 `pull_policy: always`），数据不丢。
 > 将示例中的 `praming` 替换为你的 Docker Hub 用户名；锁定版本可用 `praming/eigercore:1.0.0` 之类的具体 tag。
 
 ---
