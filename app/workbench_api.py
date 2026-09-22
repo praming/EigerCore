@@ -652,10 +652,101 @@ def _fetch_stock(query: str) -> str:
     raise last_err or RuntimeError('stock fetch failed')
 
 
+# ---------------------------------------------------------------------------
+# 新股申购日历 —— 东方财富（emdatah5 XGSG/GetXgrlData，免密钥，后端代理规避 CORS）
+# 返回「今日可申购 / 未来一周可申购 / 全部待申购」三组标的，供自选股卡片标题角标与弹窗使用。
+# ---------------------------------------------------------------------------
+def _fetch_ipo_calendar() -> dict:
+    """抓取新股申购日历，按 SECUCODE 归集申购 / 缴款日 / 上市 三类事件。
+
+    返回 {today:[...], week:[...], all:[...], error}；每项含
+    code / applyCode / name / price / applyDate / payDate / listDate。
+    仅保留带申购日期（即「可打新」）的标的；无申购事件时列表为空。
+    """
+    url = 'https://emdatah5.eastmoney.com/dc/XGSG/GetXgrlData'
+    try:
+        raw = _http_get(
+            url,
+            timeout=10,
+            encoding='utf-8',
+            headers={
+                'Referer': 'https://emdatah5.eastmoney.com/dc/xgsg/xgrl',
+                'User-Agent': 'Mozilla/5.0',
+            },
+        )
+    except Exception:
+        return {'today': [], 'week': [], 'all': [], 'error': 'fetch_failed'}
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return {'today': [], 'week': [], 'all': [], 'error': 'bad_json'}
+
+    rows = (obj.get('result') or {}).get('data') or []
+    by_code: dict[str, dict] = {}
+    for r in rows:
+        code = r.get('SECURITY_CODE') or (r.get('SECUCODE') or '').split('.')[0] or ''
+        if not code:
+            continue
+        dt_type = (r.get('DATE_TYPE') or '').strip()
+        date_str = (r.get('DATE') or '')[:10]
+        item = by_code.setdefault(
+            code,
+            {
+                'code': code,
+                'applyCode': r.get('APPLY_CODE') or code,
+                'name': r.get('SECURITY_NAME') or '',
+                'price': r.get('ISSUE_PRICE') or '',
+                'applyDate': '',
+                'payDate': '',
+                'listDate': '',
+            },
+        )
+        if dt_type == '申购':
+            item['applyDate'] = date_str
+        elif dt_type == '缴款日':
+            item['payDate'] = date_str
+        elif dt_type == '上市':
+            item['listDate'] = date_str
+
+    subs = [v for v in by_code.values() if v['applyDate']]
+
+    def _in_range(d: str, lo: date, hi: date) -> bool:
+        try:
+            return lo <= datetime.strptime(d, '%Y-%m-%d').date() <= hi
+        except Exception:
+            return False
+
+    try:
+        today = date.today()
+        today_list = [v for v in subs if v['applyDate'] == today.strftime('%Y-%m-%d')]
+        week_list = [v for v in subs if _in_range(v['applyDate'], today, today + timedelta(days=7))]
+        all_list = [v for v in subs if _in_range(v['applyDate'], today, today + timedelta(days=365))]
+    except Exception:
+        today_list = week_list = all_list = []
+    return {'today': today_list, 'week': week_list, 'all': all_list, 'error': None}
+
+
+@bp.get('/ipo')
+def ipo():
+    # 日历日级变化，缓存 1 小时；上游抖动时回退上次成功结果，避免卡片报错。
+    if 'ipo' in _CACHE and time.time() - _CACHE_TS.get('ipo', 0) < 3600:
+        return jsonify(_CACHE['ipo'][1])
+    data = _fetch_ipo_calendar()
+    if data.get('error') and 'ipo' in _CACHE:
+        return jsonify(_CACHE['ipo'][1])
+    _CACHE['ipo'] = (time.time(), data)
+    _CACHE_TS['ipo'] = time.time()
+    return jsonify(data)
+
+
 # ===========================================================================
 # 3) 招标信息 —— 爬虫抓取 + 关键词匹配（失败兜底占位）
 # ===========================================================================
 def _load_sources() -> list[dict]:
+    # 对外发布版本不内置任何招标抓取源：抓取源涉及使用者私人关注的行业/站点，
+    # 由使用者在前端「招标信息 · 设置」中自行添加（html / api / rss / browser 四类）。
+    # 如需内置，设置环境变量 WORKBENCH_BIDDING_SOURCES 为 JSON 数组覆盖此处。
+    # 详细添加方法（含中烟电子采购平台、中招公共服务平台 ctbpsp 的可复用配置）见私有文档 NOTE.md。
     raw = os.environ.get('WORKBENCH_BIDDING_SOURCES')
     if raw:
         try:
@@ -664,34 +755,7 @@ def _load_sources() -> list[dict]:
                 return parsed
         except Exception:
             pass
-    return [
-        {
-            'url': 'https://cgjy.tobacco.com.cn/',
-            'name': '中烟电子采购平台',
-            'keywords': ['布带', '吸丝带'],
-            'searchUrl': 'https://cgjy.tobacco.com.cn/search.jspx?q={kw}',
-            'fetchBody': True,
-        },
-        {
-            # 中招公共服务平台：强反爬 SPA（阿里云 WAF + 网易易盾 + 加密接口），
-            # 后端 urllib 直抓 0 命中，必须走无头浏览器渲染后抽 DOM。
-            # 首页为通用中招聚合页（不按关键词搜索），故默认 keywords 留空展示最新公告；
-            # 如需按关键词监控，可在前端设置里追加（下钻搜索页能力后续可扩展）。
-            'type': 'browser',
-            'url': 'https://ctbpsp.com/',
-            'name': '中招公共服务平台（ctbpsp）',
-            'keywords': [],
-            'fetchBody': False,
-            'itemSelector': 'div.left_body',
-            'titleSelector': 'p.left_body_name',
-            'summarySelector': 'span.btncas',
-            'dateRegex': '接收时间[:：]\\s*(\\d{4}-\\d{2}-\\d{2})',
-            'baseUrl': 'https://ctbpsp.com/',
-            'maxItems': 30,
-            'stealth': True,
-            'channel': 'msedge',
-        },
-    ]
+    return []
 
 
 def _parse_anchors(page_html: str) -> list[dict]:
@@ -1181,9 +1245,14 @@ def _fetch_browser_source(src: dict) -> list[dict]:
     return out
 
 
-def _fetch_bidding(sources: list[dict]) -> list[dict]:
+def _fetch_bidding(sources: list[dict]) -> tuple[list[dict], list[dict]]:
     """抓取各源页面，按关键词匹配链接；命中项若开启 fetchBody，则并行下钻详情页，
     提取标题 / 发布时间 / 正文。正文抓不到时 bodyAvailable=False 并标记。
+
+    每个源独立 try/except：单个源（尤其依赖无头浏览器的 browser 源）抓取失败不会
+    中断其它正常源，且回传失败原因供前端提示「为何没抓到新数据」。
+
+    返回 (命中列表, 各源抓取状态列表)。
 
     每个源支持两种抓取模式：
       - 普通模式：提供 ``url``（首页/栏目页），直接抓取该页、按关键词过滤链接。
@@ -1192,23 +1261,43 @@ def _fetch_bidding(sources: list[dict]) -> list[dict]:
         （如中烟电子采购平台 cgjy.tobacco.com.cn）。"""
     raw_hits: list[dict] = []
     seen: set[str] = set()
+    statuses: list[dict] = []
     for src in sources:
         stype = src.get('type')
+        src_name = (src.get('name') or src.get('url') or src.get('warmupUrl') or '未知源')
         # JSON API 模式：直接请求明文接口并按字段映射提取，不走 HTML 解析
         if stype == 'api':
-            raw_hits.extend(_fetch_api_source(src))
+            try:
+                got = _fetch_api_source(src)
+                raw_hits.extend(got)
+                statuses.append({'name': src_name, 'ok': True, 'count': len(got)})
+            except Exception as e:  # noqa: BLE001
+                logging.warning('[bidding] 源 %s 抓取失败: %s', src_name, e)
+                statuses.append({'name': src_name, 'ok': False, 'error': str(e)[:200]})
             if len(raw_hits) >= 30:
                 break
             continue
         # RSS / Atom 订阅模式：直接解析明文 XML 订阅源，不受反爬影响
         if stype == 'rss':
-            raw_hits.extend(_fetch_rss_source(src))
+            try:
+                got = _fetch_rss_source(src)
+                raw_hits.extend(got)
+                statuses.append({'name': src_name, 'ok': True, 'count': len(got)})
+            except Exception as e:  # noqa: BLE001
+                logging.warning('[bidding] 源 %s 抓取失败: %s', src_name, e)
+                statuses.append({'name': src_name, 'ok': False, 'error': str(e)[:200]})
             if len(raw_hits) >= 30:
                 break
             continue
         # 浏览器渲染模式：无头浏览器加载反爬 SPA、等解密渲染后按 CSS 选择器抽 DOM
         if stype == 'browser':
-            raw_hits.extend(_fetch_browser_source(src))
+            try:
+                got = _fetch_browser_source(src)
+                raw_hits.extend(got)
+                statuses.append({'name': src_name, 'ok': True, 'count': len(got)})
+            except Exception as e:  # noqa: BLE001
+                logging.warning('[bidding] 源 %s 抓取失败: %s', src_name, e)
+                statuses.append({'name': src_name, 'ok': False, 'error': str(e)[:200]})
             if len(raw_hits) >= 30:
                 break
             continue
@@ -1348,7 +1437,7 @@ def _fetch_bidding(sources: list[dict]) -> list[dict]:
         h.pop('_fetch_body', None)
         h.pop('_body_candidate', None)
         h.pop('_enriched', None)
-    return final
+    return final, statuses
 
 
 def _extract_time(text: str) -> str:
@@ -1494,19 +1583,22 @@ def bidding():
         except Exception:
             sources = None
     if not sources:
-        # 前端未传 / 传空：使用内置默认源（仅这种情况才允许占位兜底）
+        # 前端未传 / 传空：使用内置默认源（发布版本为空，需使用者自行添加）；
+        # 仅「未配置任何源」才回退占位演示数据，避免空屏。
         sources = _load_sources()
         used_default = True
 
     # 读取前先清理半年以上旧数据（自动删除）
     _prune_bids()
 
+    src_status: list[dict] = []
     if force:
         # 手动刷新：抓取 → 仅新增未入库条目 → 返回库内全部（含历史）
         try:
-            hits = _fetch_bidding(sources)
-        except Exception:
-            hits = []
+            hits, src_status = _fetch_bidding(sources)
+        except Exception as e:  # noqa: BLE001
+            logging.warning('[bidding] 整体抓取异常: %s', e)
+            hits, src_status = [], [{'name': '整体', 'ok': False, 'error': str(e)[:200]}]
         _persist_bids(hits)
         items, fetched_at = _read_bids()
     else:
@@ -1514,9 +1606,10 @@ def bidding():
         items, fetched_at = _read_bids()
         if not items:
             try:
-                hits = _fetch_bidding(sources)
-            except Exception:
-                hits = []
+                hits, src_status = _fetch_bidding(sources)
+            except Exception as e:  # noqa: BLE001
+                logging.warning('[bidding] 整体抓取异常: %s', e)
+                hits, src_status = [], [{'name': '整体', 'ok': False, 'error': str(e)[:200]}]
             if hits:
                 _persist_bids(hits)
                 items, fetched_at = _read_bids()
@@ -1525,7 +1618,7 @@ def bidding():
         # 库空且真抓不到：仅当用户未配置任何源（used_default）才回退占位演示数据
         items = _PLACEHOLDER_BIDDING if used_default else []
         fetched_at = None
-    return jsonify({'items': items, 'fetchedAt': fetched_at})
+    return jsonify({'items': items, 'fetchedAt': fetched_at, 'statuses': src_status})
 
 
 def _bidding_cache_key(sources: list[dict]) -> str:

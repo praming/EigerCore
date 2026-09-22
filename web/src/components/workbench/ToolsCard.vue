@@ -4,6 +4,7 @@ import WbCard from '../WbCard.vue'
 import AppIcon from '../AppIcon.vue'
 import WbSelect from '../WbSelect.vue'
 import WbDatePicker from './WbDatePicker.vue'
+import WbTimePicker from './WbTimePicker.vue'
 import TranslateTool from './TranslateTool.vue'
 import { caseAmount } from '@/utils/caseAmount'
 import { ageCalc } from '@/utils/ageCalc'
@@ -316,7 +317,27 @@ const tsOut = computed(() => {
     unit: s.length <= 10 ? '按「秒」解析' : s.length <= 13 ? '按「毫秒」解析' : '按「微秒」解析',
   }
 })
-const dtIn = ref(toLocalInput(new Date()))
+// 日期时间 → 时间戳：拆成「日期 + 时间」两个美化选择器，组合回 datetime-local 字符串
+function ymd(d: Date): string {
+  const p = (n: number) => (n < 10 ? '0' + n : String(n))
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+function hm(d: Date): string {
+  const p = (n: number) => (n < 10 ? '0' + n : String(n))
+  return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
+const dtDate = ref(ymd(new Date()))
+const dtTime = ref(hm(new Date()))
+const dtIn = computed<string>({
+  get: () => `${dtDate.value}T${dtTime.value}:00`,
+  set: (v: string) => {
+    const d = new Date(v)
+    if (!isNaN(d.getTime())) {
+      dtDate.value = ymd(d)
+      dtTime.value = hm(d)
+    }
+  },
+})
 const dtOut = computed(() => {
   const d = new Date(dtIn.value)
   if (isNaN(d.getTime())) return null
@@ -987,8 +1008,9 @@ onUnmounted(() => {
               <div v-else-if="tsOut" class="wb-out" style="margin-top:0">时间戳需为纯数字</div>
 
               <div class="wb-tool__label" style="margin-top:1rem">日期时间 → 时间戳</div>
-              <div class="wb-cv__row" style="margin-bottom:.5rem">
-                <input class="wb-input" v-model="dtIn" type="datetime-local" step="1" />
+              <div class="wb-cv__row" style="margin-bottom:.5rem; flex-wrap: wrap; gap: .5rem">
+                <WbDatePicker v-model="dtDate" />
+                <WbTimePicker v-model="dtTime" />
                 <button class="btn btn-sm btn-ghost" type="button" @click="useNowDt">取当前</button>
               </div>
               <div v-if="dtOut" class="wb-out wb-out--click" style="margin-top:0" @click="copyText(String(dtOut.sec))">

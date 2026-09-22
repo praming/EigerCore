@@ -580,49 +580,10 @@ function defaultPrefs(): WbPrefs {
     bidding: {
       autoFetch: false,
       fetchInterval: 480,
-      sources: [
-        {
-          id: uid(),
-          url: 'https://cgjy.tobacco.com.cn/',
-          name: '中烟电子采购平台',
-          keywords: ['布带', '吸丝带'],
-          fetchBody: true,
-          searchUrl: 'https://cgjy.tobacco.com.cn/search.jspx?q={kw}',
-        },
-        {
-          id: uid(),
-          // 中招公共服务平台：强反爬 SPA（WAF + 易盾 + 加密接口），后端 urllib 直抓 0 命中，
-          // 必须走无头浏览器渲染后按 CSS 选择器抽 DOM。首页为通用中招聚合页，默认不按关键词过滤。
-          url: 'https://ctbpsp.com/',
-          name: '中招公共服务平台（ctbpsp）',
-          type: 'browser',
-          keywords: [],
-          fetchBody: false,
-          itemSelector: 'div.left_body',
-          titleSelector: 'p.left_body_name',
-          summarySelector: 'span.btncas',
-          dateRegex: '接收时间[:：]\\s*(\\d{4}-\\d{2}-\\d{2})',
-          baseUrl: 'https://ctbpsp.com/',
-          maxItems: 30,
-          stealth: true,
-          channel: 'msedge',
-          // 关键词搜索：ctbpsp 首页搜索框 + 「搜索」按钮；配置后按用户关键词驱动搜索而非只抓通用首页
-          searchInputSelector: 'input[type="text"]',
-          searchButtonSelector: 'button.btns',
-          // 全文搜索：ctbpsp 搜索框下方有「搜标题/搜全文」滑动开关（Element UI .el-switch），
-          // 默认是「搜标题」ON（aria-checked="true"），点一次切换到「搜全文」OFF；
-          // 否则关键词只能匹配标题，错失正文中包含关键词的标讯。
-          searchFullTextToggleSelector: '.el-switch.switchStyle',
-          // 搜索触发方式：ctbpsp 在点「搜索」按钮时会拉起易盾滑块验证并 disable 按钮，
-          // 真正的 searchkeyword 请求由组件方法 getlist() 发起，故直调组件方法绕开风控。
-          searchInvoke: 'vue',
-          vueMethod: 'getlist',
-          // 有头 + 持久化 profile：headless 指纹会被风控识别，搜索必弹验证
-          headful: true,
-          // 信任站点全文搜索结果：不再按标题二次过滤，保留正文命中的标讯
-          trustSiteSearch: true,
-        },
-      ],
+      // 对外发布版本不内置任何抓取源：招标数据涉及用户私人关注的行业/站点，
+      // 由使用者自行在「招标信息 · 设置」中添加（html / api / rss / browser 四类）。
+      // 详见私有文档 NOTE.md 的「招标抓取源 · 用户自行添加」一节。
+      sources: [],
     },
     links: {
       items: [

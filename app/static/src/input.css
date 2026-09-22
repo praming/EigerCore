@@ -1995,6 +1995,37 @@ select::-ms-expand { display: none; }
 .wb-date__foot button { @apply text-xs; background: transparent; border: 0; color: hsl(var(--p)); cursor: pointer; }
 .wb-date__foot button:hover { text-decoration: underline; }
 
+/* 时间选择器（HH:MM）：与 WbDatePicker 视觉风格一致 */
+.wb-time { position: relative; }
+.wb-time__trigger {
+    display: flex; align-items: center; gap: .5rem; width: 100%;
+    padding: .5rem .6rem; border-radius: .6rem; cursor: pointer;
+    border: 1px solid hsl(var(--bc) / .14); background: hsl(var(--b1)); color: hsl(var(--bc));
+    transition: border-color .18s, box-shadow .18s; font-variant-numeric: tabular-nums;
+}
+.wb-time__trigger:hover { border-color: hsl(var(--p) / .4); }
+.wb-time__trigger.is-empty { color: hsl(var(--bc) / .5); }
+.wb-time__pop {
+    position: fixed; z-index: 9999; max-width: calc(100vw - 16px);
+    width: 13.75rem; padding: .6rem; border-radius: .8rem;
+    background: hsl(var(--b1)); border: 1px solid hsl(var(--bc) / .12);
+    box-shadow: 0 14px 34px hsl(var(--bc) / .18);
+}
+.wb-time__cols { display: flex; gap: .5rem; }
+.wb-time__col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wb-time__col-head { @apply text-xs; text-align: center; color: hsl(var(--bc) / .5); font-weight: 600; padding-bottom: .35rem; }
+.wb-time__col-body {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: .2rem;
+    max-height: 12rem; overflow-y: auto; padding-right: .2rem;
+}
+.wb-time__cell {
+    aspect-ratio: 1 / 1; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: .5rem; background: transparent; color: hsl(var(--bc));
+    font-variant-numeric: tabular-nums; cursor: pointer; transition: .12s;
+}
+.wb-time__cell:hover { background: hsl(var(--p) / .14); }
+.wb-time__cell.is-sel { background: hsl(var(--p)); color: #fff; font-weight: 700; }
+
 /* 工具箱 */
 /* 工具箱容器：撑满卡片高度，内部图标网格自行滚动（工具数量已扩展到 11 个） */
 .wb-tools { display: flex; flex-direction: column; min-height: 0; height: 100%; }
@@ -2088,6 +2119,12 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 /* 招标信息 */
 .wb-bidding { display: block; }
+/* 招标抓取失败源横幅：定位「刷新抓不到新数据」的根因 */
+.wb-bidding__warn { display: flex; flex-direction: column; gap: .25rem; margin: .2rem 0 .7rem; padding: .5rem .65rem; border: 1px solid hsl(var(--er) / .35); background: hsl(var(--er) / .08); border-radius: .7rem; @apply text-xs; color: hsl(var(--er) / .9); line-height: 1.5; }
+.wb-bidding__warn > span { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; }
+.wb-bidding__warn ul { margin: 0; padding-left: 1.1rem; }
+.wb-bidding__warn li { margin: .1rem 0; word-break: break-all; }
+.wb-bidding__warn b { font-weight: 700; }
 .wb-src { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .75rem; }
 .wb-src__item { border: 1px solid hsl(var(--bc) / .1); border-radius: .7rem; padding: .5rem .6rem; }
 .wb-src__url { @apply text-sm; font-weight: 600; word-break: break-all; }
@@ -2277,6 +2314,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .wb-wl__handle { display: inline-flex; align-items: center; color: hsl(var(--bc) / .35); cursor: grab; flex: none; }
 .wb-wl__handle:active { cursor: grabbing; color: hsl(var(--p)); }
 .wb-wl__row.is-dragging { opacity: .5; }
+.wb-wl__row.is-over { box-shadow: inset 0 2px 0 0 hsl(var(--p) / .7); background: hsl(var(--p) / .08); }
 .wb-wl__row.draggable, .wb-wl__row[draggable="true"] { cursor: grab; }
 /* 自选股：设置页持仓列表——单行横向排布（拖拽柄 | 信息 | 编辑 | 删除），不换行 */
 .wb-wl--setting .wb-wl__row { flex-direction: row; align-items: center; flex-wrap: nowrap; gap: .5rem; padding: .5rem .2rem; }
@@ -2295,6 +2333,43 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .wb-wl__refresh:disabled { cursor: default; opacity: .6; }
 .wb-wl__refresh .spin { animation: wb-spin .9s linear infinite; }
 @keyframes wb-spin { to { transform: rotate(360deg); } }
+
+/* 自选股：新股申购角标（标题后，点击弹窗） */
+.wb-wl__ipo {
+  font-size: .68rem; line-height: 1; padding: .18rem .42rem; border-radius: .5rem;
+  white-space: nowrap; cursor: pointer; font-weight: 600;
+  color: hsl(var(--p)); background: hsl(var(--p) / .14);
+  border: 1px solid hsl(var(--p) / .28); transition: background .2s var(--ease);
+}
+.wb-wl__ipo:hover { background: hsl(var(--p) / .22); }
+
+/* 自选股：新股申购详情弹窗 */
+.wb-ipo__mask {
+  position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center;
+  background: hsl(var(--bc) / .35); padding: 1rem;
+}
+.wb-ipo__dialog {
+  width: min(26rem, 100%); max-height: 80vh; overflow: auto;
+  background: hsl(var(--b1)); border: 1px solid hsl(var(--bc) / .14);
+  border-radius: .9rem; box-shadow: 0 18px 46px hsl(var(--bc) / .22);
+}
+.wb-ipo__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .8rem 1rem; font-weight: 700; border-bottom: 1px solid hsl(var(--bc) / .1);
+}
+.wb-ipo__close {
+  border: 0; background: transparent; color: hsl(var(--bc) / .55); cursor: pointer;
+  font-size: 1rem; line-height: 1; padding: .2rem .4rem; border-radius: .5rem;
+}
+.wb-ipo__close:hover { background: hsl(var(--bc) / .08); color: hsl(var(--bc)); }
+.wb-ipo__list { list-style: none; margin: 0; padding: .4rem .6rem .8rem; }
+.wb-ipo__item { padding: .55rem .5rem; border-bottom: 1px solid hsl(var(--bc) / .08); }
+.wb-ipo__item:last-child { border-bottom: 0; }
+.wb-ipo__name { font-weight: 700; font-size: .92rem; display: flex; align-items: baseline; gap: .4rem; }
+.wb-ipo__code { font-size: .72rem; color: hsl(var(--bc) / .5); font-weight: 500; }
+.wb-ipo__meta { margin-top: .3rem; display: flex; flex-wrap: wrap; gap: .3rem .8rem; font-size: .76rem; color: hsl(var(--bc) / .7); }
+.wb-ipo__meta b { color: hsl(var(--bc)); font-weight: 600; }
+.wb-ipo__empty { padding: .8rem .5rem; font-size: .82rem; }
 
 /* 天气卡片：自动刷新模式徽标 + 错误条 + 指定时间点列表 */
 .wb-wx__auto { font-size: .68rem; line-height: 1; padding: .18rem .42rem; border-radius: .5rem; white-space: nowrap; color: hsl(var(--p)); background: hsl(var(--p) / .12); font-weight: 600; }

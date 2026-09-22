@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import WbCard from '../WbCard.vue'
 import AppIcon from '../AppIcon.vue'
-import { workbenchApi, type BiddingHit } from '@/api/workbench'
+import { workbenchApi, type BiddingHit, type BiddingSourceStatus } from '@/api/workbench'
 import { useWorkbenchStore } from '@/stores/workbench'
 
 const wb = useWorkbenchStore()
@@ -13,6 +13,8 @@ const loading = ref(true)
 const refreshing = ref(false)
 const inFlight = ref(false) // 并发守卫：仅在请求真正进行中时阻止重复拉取
 const lastUpdated = ref<Date | null>(null) // 最近一次成功抓取的时间，用于顶部「更新 时间」
+// 各抓取源最近一次抓取状态：失败源会高亮提示，帮助定位「刷新抓不到新数据」的根因
+const srcStatus = ref<BiddingSourceStatus[]>([])
 
 // 最新命中：按时间范围 tab 过滤
 type TabKey = 'all' | 'today' | '3d' | '7d' | '30d' | '3m' | '6m'
@@ -118,6 +120,12 @@ const emptyHint = computed(() => {
   return '暂未抓到匹配内容，请检查抓取源 URL 与关键词'
 })
 
+// 是否尚未配置任何抓取源（公开版默认空，需用户自行添加）
+const noSources = computed(() => (cfg.value.sources || []).length === 0)
+
+// 抓取失败的源（本次刷新触发才可能有）：用于顶部横幅提示「为何没抓到新数据」
+const failedStatuses = computed(() => srcStatus.value.filter((s) => !s.ok))
+
 // 拉取招标命中；force=true 时跳过后端缓存强制重抓
 // 始终携带用户配置的抓取源，使设置页的增删改即时反映到抓取结果
 async function refresh(force = false) {
@@ -130,6 +138,8 @@ async function refresh(force = false) {
   try {
     const res = await workbenchApi.biddingHits(cfg.value.sources, force)
     hits.value = res.items
+    // 抓取触发（force 或首次）时后端回传各源状态；读库命中则 statuses 为空，无需提示
+    srcStatus.value = res.statuses || []
     // 展示「真实抓取数据时间」：取后端返回的最近入库时刻，而非前端请求/页面刷新时刻
     lastUpdated.value = res.fetchedAt
       ? new Date(res.fetchedAt.replace(' ', 'T'))
@@ -255,6 +265,16 @@ function contextSegments(h: BiddingHit): Seg[] {
       </button>
     </template>
     <div class="wb-bidding">
+      <!-- 抓取失败源提示：定位「刷新抓不到新数据」的根因（如 browser 源缺无头浏览器） -->
+      <div v-if="failedStatuses.length" class="wb-bidding__warn">
+        <AppIcon name="alert-triangle" :size="14" />
+        <span>{{ failedStatuses.length }} 个抓取源本次失败：</span>
+        <ul>
+          <li v-for="s in failedStatuses" :key="s.name">
+            <b>{{ s.name }}</b><span v-if="s.error"> — {{ s.error }}</span>
+          </li>
+        </ul>
+      </div>
       <!-- 命中文章（抓取源在「招标信息 · 设置」中管理） -->
       <div class="wb-bidding__hits">
         <div class="wb-sub wb-sub--row wb-bidding__filters">
@@ -310,7 +330,10 @@ function contextSegments(h: BiddingHit): Seg[] {
             </div>
           </li>
         </ul>
-        <div v-if="!loading && filteredHits.length === 0" class="wb-muted" style="font-size: .85rem">{{ emptyHint }}</div>
+        <div v-if="!loading && filteredHits.length === 0" class="wb-muted" style="font-size: .85rem">
+          <template v-if="noSources">尚未配置抓取源，请点右上角齿轮 → 招标信息 · 设置，在「抓取源」中添加</template>
+          <template v-else>{{ emptyHint }}</template>
+        </div>
       </div>
     </div>
   </WbCard>

@@ -29,6 +29,8 @@ import type { BiddingSource } from '@/api/workbench'
 import AppIcon from './AppIcon.vue'
 import WbSwitch from './WbSwitch.vue'
 import WbSelect from './WbSelect.vue'
+import WbDatePicker from './workbench/WbDatePicker.vue'
+import WbTimePicker from './workbench/WbTimePicker.vue'
 import { hotlistLogo } from '@/assets/hotlist'
 import { readIconFile } from '@/utils/iconUpload'
 
@@ -325,21 +327,6 @@ const newSearchBtnSel = ref('')
 // 「全文/标题」搜索切换开关选择器（如 Element UI 的 '.el-switch.switchStyle'）；
 // 配置后浏览器脚本会在关键词搜索开始前确保开关处于「OFF/全文」模式
 const newSearchToggleSel = ref('')
-// ctbpsp 预设：一键填入已知可用的反爬 SPA 选择器（用户也可自行改）
-function fillCtbpspPreset() {
-  newSrcUrl.value = 'https://ctbpsp.com/'
-  newSrcName.value = '中招公共服务平台（ctbpsp）'
-  newItemSel.value = 'div.left_body'
-  newTitleSel.value = 'p.left_body_name'
-  newSumSel.value = 'span.btncas'
-  newDateRegex.value = '接收时间[:：]\\s*(\\d{4}-\\d{2}-\\d{2})'
-  newBaseUrl.value = 'https://ctbpsp.com/'
-  newSearchInputSel.value = 'input[type="text"]'
-  newSearchBtnSel.value = 'button.btns'
-  // ctbpsp 搜索框下方有「搜标题/搜全文」滑动开关，默认是「搜标题」ON（aria-checked="true"）；
-  // 配此选择器后，浏览器脚本会把它 OFF 化一次，保证关键词能搜全文而非只匹配标题。
-  newSearchToggleSel.value = '.el-switch.switchStyle'
-}
 function addSrc() {
   const kws = newSrcKw.value
     .split(/[,，]/)
@@ -611,22 +598,38 @@ function cancelEditHolding() {
 }
 
 // —— 自选股持仓拖拽排序 ——
+// 关键修复：拖拽过程中不能再 mutate 响应式列表。原实现在每次 dragover 都重排并
+// 重赋值 holdings 数组，Vue 重渲染 keyed v-for 会在拖拽中途重建被拖拽的 DOM 节点，
+// 浏览器随之取消本次拖拽，表现为「无法拖拽排序」。
+// 改为：dragover 仅记录当前悬停目标（防重渲染），drop / dragend 时统一提交一次重排。
 const dragId = ref<number | null>(null)
+const overId = ref<number | null>(null)
 function onDragStart(id: number) {
   dragId.value = id
 }
 function onDragOver(e: DragEvent, id: number) {
   e.preventDefault()
-  if (dragId.value === null || dragId.value === id) return
+  overId.value = id
+}
+function onDrop(e: DragEvent, id: number) {
+  e.preventDefault()
+  commitReorder(id)
+}
+function commitReorder(targetId: number) {
+  if (dragId.value == null) return
   const ids = cfg.value.holdings.map((h) => h.id)
   const from = ids.indexOf(dragId.value)
-  const to = ids.indexOf(id)
-  if (from < 0 || to < 0) return
+  const to = ids.indexOf(targetId)
+  if (from < 0 || to < 0 || from === to) return
   ids.splice(to, 0, ids.splice(from, 1)[0])
   wb.reorderHolding(props.iid, ids)
 }
 function onDragEnd() {
+  if (dragId.value != null && overId.value != null && dragId.value !== overId.value) {
+    commitReorder(overId.value)
+  }
   dragId.value = null
+  overId.value = null
 }
 
 // —— 常用链接拖拽排序 ——
@@ -1129,7 +1132,7 @@ function onWcDragEnd() {
           <template v-if="dcRepeat === 'once'">
             <div class="wb-row">
               <label>日期</label>
-              <input class="wb-input" type="date" v-model="dcDate" />
+              <WbDatePicker v-model="dcDate" />
             </div>
           </template>
           <template v-else-if="dcRepeat === 'yearly'">
@@ -1217,9 +1220,9 @@ function onWcDragEnd() {
                 </div>
                 <div v-if="weatherTimes.length === 0" class="wb-cd__empty">未添加时间点</div>
               </div>
-              <div class="wb-row" style="margin-top:.6rem">
+                <div class="wb-row" style="margin-top:.6rem">
                 <label>添加</label>
-                <input class="wb-input" type="time" v-model="newWeatherTime" />
+                <WbTimePicker v-model="newWeatherTime" />
                 <button class="btn btn-sm" @click="addWeatherTime">添加</button>
               </div>
               <p class="wb-muted" style="font-size:.76rem;margin-top:.4rem">到达每个时间点即自动刷新天气（按设备本地时间）。</p>
@@ -1393,10 +1396,11 @@ function onWcDragEnd() {
               v-for="h in cfg.holdings"
               :key="h.id"
               class="wb-wl__row"
-              :class="{ 'is-dragging': dragId === h.id }"
+              :class="{ 'is-dragging': dragId === h.id, 'is-over': overId === h.id }"
               draggable="true"
               @dragstart="onDragStart(h.id)"
               @dragover="onDragOver($event, h.id)"
+              @drop="onDrop($event, h.id)"
               @dragend="onDragEnd"
             >
               <span class="wb-wl__handle" title="拖拽排序"><AppIcon name="grip-vertical" :size="16" /></span>
@@ -1428,7 +1432,7 @@ function onWcDragEnd() {
             <label>股数</label><input class="wb-input" v-model.number="newHolding.shares" type="number" step="1" placeholder="持仓数量" />
           </div>
           <div class="wb-row">
-            <label>建仓日期</label><input class="wb-input" v-model="newHolding.costDate" type="date" />
+            <label>建仓日期</label><WbDatePicker v-model="newHolding.costDate" />
           </div>
           <div class="wb-wl__form-actions">
             <button class="btn btn-sm" @click="editingHoldingId != null ? saveEditHolding() : addHolding()">
@@ -1610,7 +1614,7 @@ function onWcDragEnd() {
             <div v-for="s in cfg.sources" :key="s.id" class="wb-src__item">
               <template v-if="editSrcId === s.id">
                 <div class="wb-src__edit">
-                  <input class="wb-input" v-model="editSrcName" placeholder="名称（自定义源名称，如「中烟电子采购平台」）" />
+                  <input class="wb-input" v-model="editSrcName" placeholder="名称（自定义源名称，如「行业招标聚合」）" />
                   <div class="wb-row" style="margin:.2rem 0">
                     <label>源类型</label>
                     <WbSelect
@@ -1649,13 +1653,13 @@ function onWcDragEnd() {
                     <div class="wb-src__hint">订阅源是明文 XML，后端直接解析、不受反爬影响；命中按关键词过滤，点标题去源站看详情。例：https://site.com/rss.xml</div>
                   </template>
                   <template v-else>
-                    <input class="wb-input" v-model="editSrcUrl" placeholder="加载并过 WAF 的页面地址（如 https://ctbpsp.com/）" />
+                    <input class="wb-input" v-model="editSrcUrl" placeholder="加载并过 WAF 的页面地址（如 https://example.com/）" />
                     <input class="wb-input" v-model="editSrcKw" placeholder="关键词（逗号分隔；留空=展示最新公告）" />
-                    <input class="wb-input" v-model="editItemSel" placeholder="列表项容器选择器（如 div.left_body）" />
-                    <input class="wb-input" v-model="editTitleSel" placeholder="标题选择器（如 p.left_body_name）" />
-                    <input class="wb-input" v-model="editSumSel" placeholder="摘要选择器（可空，如 span.btncas）" />
-                    <input class="wb-input" v-model="editDateRegex" placeholder="日期正则（如 接收时间[:：]\s*(\d{4}-\d{2}-\d{2})）" />
-                    <input class="wb-input" v-model="editBaseUrl" placeholder="站点基址（链接兜底，如 https://ctbpsp.com/）" />
+                    <input class="wb-input" v-model="editItemSel" placeholder="列表项容器选择器（如 div.list-item）" />
+                    <input class="wb-input" v-model="editTitleSel" placeholder="标题选择器（如 .title）" />
+                    <input class="wb-input" v-model="editSumSel" placeholder="摘要选择器（可空，如 .summary）" />
+                    <input class="wb-input" v-model="editDateRegex" placeholder="日期正则（如 发布时间[:：]\s*(\d{4}-\d{2}-\d{2})）" />
+                    <input class="wb-input" v-model="editBaseUrl" placeholder="站点基址（链接兜底，如 https://example.com/）" />
                     <input class="wb-input" v-model="editSearchInputSel" placeholder="搜索框选择器（可选，如 input[type=&quot;text&quot;]）" />
                     <input class="wb-input" v-model="editSearchBtnSel" placeholder="搜索按钮选择器（可选，如 button.btns；留空回车/按「搜索」）" />
                     <input class="wb-input" v-model="editSearchToggleSel" placeholder="全文开关选择器（可选，如 .el-switch.switchStyle；填了后驱动开关 OFF 化切到全文模式）" />
@@ -1730,18 +1734,17 @@ function onWcDragEnd() {
               <div class="wb-src__hint">订阅源是明文 XML，后端直接解析、不受反爬影响；命中按关键词过滤，点标题去源站看详情。例：https://site.com/rss.xml</div>
             </template>
             <template v-else>
-              <input class="wb-input" v-model="newSrcUrl" placeholder="加载并过 WAF 的页面地址（如 https://ctbpsp.com/）" />
+              <input class="wb-input" v-model="newSrcUrl" placeholder="加载并过 WAF 的页面地址（如 https://example.com/）" />
               <input class="wb-input" v-model="newSrcKw" placeholder="关键词（逗号分隔；留空=展示最新公告）" />
-              <input class="wb-input" v-model="newItemSel" placeholder="列表项容器选择器（如 div.left_body）" />
-              <input class="wb-input" v-model="newTitleSel" placeholder="标题选择器（如 p.left_body_name）" />
-              <input class="wb-input" v-model="newSumSel" placeholder="摘要选择器（可空，如 span.btncas）" />
-              <input class="wb-input" v-model="newDateRegex" placeholder="日期正则（如 接收时间[:：]\s*(\d{4}-\d{2}-\d{2})）" />
-              <input class="wb-input" v-model="newBaseUrl" placeholder="站点基址（链接兜底，如 https://ctbpsp.com/）" />
+              <input class="wb-input" v-model="newItemSel" placeholder="列表项容器选择器（如 div.list-item）" />
+              <input class="wb-input" v-model="newTitleSel" placeholder="标题选择器（如 .title）" />
+              <input class="wb-input" v-model="newSumSel" placeholder="摘要选择器（可空，如 .summary）" />
+              <input class="wb-input" v-model="newDateRegex" placeholder="日期正则（如 发布时间[:：]\s*(\d{4}-\d{2}-\d{2})）" />
+              <input class="wb-input" v-model="newBaseUrl" placeholder="站点基址（链接兜底，如 https://example.com/）" />
               <input class="wb-input" v-model="newSearchInputSel" placeholder="搜索框选择器（可选，如 input[type=&quot;text&quot;]）" />
-              <input class="wb-input" v-model="newSearchBtnSel" placeholder="搜索按钮选择器（可选，如 button.btns；留空回车/按「搜索」）" />
-              <input class="wb-input" v-model="newSearchToggleSel" placeholder="全文开关选择器（可选，如 .el-switch.switchStyle；填了后驱动开关 OFF 化切到全文模式）" />
-              <button class="btn btn-sm btn-ghost" type="button" @click="fillCtbpspPreset">填入 ctbpsp 预设</button>
-              <div class="wb-src__hint">无头 Edge 渲染 SPA、等解密后按选择器抽 DOM；适合 WAF + 加密接口 + 无 RSS 的强反爬站点（如 ctbpsp.com）。<b>填了「搜索框选择器」并设关键词后，会按每个关键词驱动站点搜索框抓取命中结果</b>（而非只抓通用首页）；链接无 &lt;a href&gt; 时统一兜底到站点基址。<b>若站点搜索框旁有「搜标题/搜全文」滑动开关</b>，填入对应 CSS 选择器，浏览器脚本会在搜索开始前把它 OFF 化一次。</div>
+              <input class="wb-input" v-model="newSearchBtnSel" placeholder="搜索按钮选择器（可选，如 button.search；留空回车/按「搜索」）" />
+              <input class="wb-input" v-model="newSearchToggleSel" placeholder="全文开关选择器（可选，如 .el-switch；填了后驱动开关 OFF 化切到全文模式）" />
+              <div class="wb-src__hint">无头 Edge 渲染 SPA、等解密后按选择器抽 DOM；适合 WAF + 加密接口 + 无 RSS 的强反爬站点。<b>填了「搜索框选择器」并设关键词后，会按每个关键词驱动站点搜索框抓取命中结果</b>（而非只抓通用首页）；链接无 &lt;a href&gt; 时统一兜底到站点基址。<b>若站点搜索框旁有「搜标题/搜全文」滑动开关</b>，填入对应 CSS 选择器，浏览器脚本会在搜索开始前把它 OFF 化一次。</div>
             </template>
             <button class="btn btn-sm" @click="addSrc">添加源</button>
           </div>

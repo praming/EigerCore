@@ -3,7 +3,7 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import WbCard from '../WbCard.vue'
 import AppIcon from '../AppIcon.vue'
 import { useWorkbenchStore, type Holding } from '@/stores/workbench'
-import { workbenchApi, type MarketItem } from '@/api/workbench'
+import { workbenchApi, type MarketItem, type IpoItem } from '@/api/workbench'
 import { isMarketOpen } from '@/utils/market'
 
 const wb = useWorkbenchStore()
@@ -177,11 +177,46 @@ onMounted(() => {
   startAuto()
   // 配置变更（开关 / 间隔）→ 重新建立定时器
   stopAutoWatch = watch(autoCfg, () => startAuto(), { deep: true })
+  // 新股申购日历：挂载即拉取，每 30 分钟刷新一次（日历日级变化，无需更频繁）
+  void loadIpo()
+  ipoTimer = window.setInterval(loadIpo, 30 * 60 * 1000)
 })
 
 onUnmounted(() => {
   stopAuto()
   if (stopAutoWatch) stopAutoWatch()
+  if (ipoTimer !== null) clearInterval(ipoTimer)
+})
+
+// —— 新股申购日历角标 + 弹窗 ——
+const ipoData = ref<{ today: IpoItem[]; week: IpoItem[]; all: IpoItem[]; error?: string } | null>(null)
+const ipoLoading = ref(false)
+const ipoOpen = ref(false)
+let ipoTimer: number | null = null
+
+async function loadIpo() {
+  if (ipoLoading.value) return
+  ipoLoading.value = true
+  try {
+    ipoData.value = await workbenchApi.ipo()
+  } catch {
+    ipoData.value = { today: [], week: [], all: [], error: 'fetch_failed' }
+  } finally {
+    ipoLoading.value = false
+  }
+}
+const ipoTodayCount = computed(() => ipoData.value?.today.length ?? 0)
+const ipoWeekCount = computed(() => ipoData.value?.week.length ?? 0)
+const ipoBadge = computed(() => {
+  if (!ipoData.value) return null
+  if (ipoTodayCount.value === 0 && ipoWeekCount.value === 0) return null
+  return `【新股：今${ipoTodayCount.value}；周${ipoWeekCount.value}】`
+})
+// 弹窗优先展示「未来一周可申购」，为空则回退「全部待申购」
+const ipoModalList = computed<IpoItem[]>(() => {
+  const d = ipoData.value
+  if (!d) return []
+  return d.week.length ? d.week : d.all
 })
 </script>
 
@@ -190,6 +225,13 @@ onUnmounted(() => {
     <template #meta>
       <span v-if="autoActive" class="wb-wl__auto" title="开市时段自动刷新中">自动 · {{ autoCfg.interval }}s</span>
       <span v-else-if="autoCfg.enabled" class="wb-wl__auto wb-wl__auto--off" title="已开启，但当前为休市时段">休市</span>
+      <button
+        v-if="ipoBadge"
+        class="wb-wl__ipo"
+        type="button"
+        :title="`今日可申购 ${ipoTodayCount} 只，未来一周可申购 ${ipoWeekCount} 只，点击查看详情`"
+        @click="ipoOpen = true"
+      >{{ ipoBadge }}</button>
       <span v-if="lastSync" class="wb-wl__sync">已同步 {{ lastSync }}</span>
       <button
         class="wb-wl__refresh"
@@ -231,6 +273,29 @@ onUnmounted(() => {
       <span>合计当日：<b :class="totals.d >= 0 ? 'wb-wl__pl up' : 'wb-wl__pl down'">{{ money(totals.d) }}</b></span>
       <span>合计总收益：<b :class="totals.t >= 0 ? 'wb-wl__pl up' : 'wb-wl__pl down'">{{ money(totals.t) }}</b></span>
       <span>总持仓金额：<b class="wb-wl__amount">{{ totals.a.toFixed(2) }}</b></span>
+    </div>
+
+    <!-- 新股申购详情弹窗 -->
+    <div v-if="ipoOpen" class="wb-ipo__mask" @click.self="ipoOpen = false">
+      <div class="wb-ipo__dialog">
+        <div class="wb-ipo__head">
+          <span>新股申购</span>
+          <button class="wb-ipo__close" type="button" aria-label="关闭" @click="ipoOpen = false">✕</button>
+        </div>
+        <div v-if="ipoLoading" class="wb-muted" style="padding:.8rem">加载中…</div>
+        <ul v-else class="wb-ipo__list">
+          <li v-for="it in ipoModalList" :key="it.code" class="wb-ipo__item">
+            <div class="wb-ipo__name">{{ it.name }}<span class="wb-ipo__code">{{ it.code }}</span></div>
+            <div class="wb-ipo__meta">
+              <span>申购 <b>{{ it.applyDate }}</b></span>
+              <span v-if="it.payDate">缴款 <b>{{ it.payDate }}</b></span>
+              <span v-if="it.listDate">上市 <b>{{ it.listDate }}</b></span>
+              <span v-if="it.price">发行价 <b>{{ it.price }}</b></span>
+            </div>
+          </li>
+          <li v-if="!ipoModalList.length" class="wb-muted wb-ipo__empty">未来一周暂无新股申购</li>
+        </ul>
+      </div>
     </div>
   </WbCard>
 </template>

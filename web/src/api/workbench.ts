@@ -102,6 +102,24 @@ export interface BiddingHit {
   titleHit?: boolean
 }
 
+/** 单个招标抓取源的上一次抓取状态（供前端提示「为何没抓到新数据」） */
+export interface BiddingSourceStatus {
+  name: string
+  ok: boolean
+  /** ok=false 时的失败原因（后端截断到 200 字） */
+  error?: string
+  /** ok=true 时的命中条数 */
+  count?: number
+}
+
+/** /api/bidding 返回结构 */
+export interface BiddingResponse {
+  items: BiddingHit[]
+  fetchedAt: string | null
+  /** 各源最近一次抓取状态；空数组表示未触发抓取（读库） */
+  statuses: BiddingSourceStatus[]
+}
+
 export interface WeatherInfo {
   city: string
   temp: number
@@ -232,6 +250,20 @@ export interface MarketItem {
   prevClose: number
 }
 
+/** 新股申购标的（来自东方财富新股申购日历） */
+export interface IpoItem {
+  code: string
+  applyCode: string
+  name: string
+  price: string | number
+  /** 申购（打新）日期 YYYY-MM-DD */
+  applyDate: string
+  /** 缴款日 YYYY-MM-DD */
+  payDate: string
+  /** 上市日期 YYYY-MM-DD */
+  listDate: string
+}
+
 export type HotlistSource = 'weibo' | 'zhihu' | 'baidu' | 'bili' | 'douyin' | 'toutiao' | 'tieba' | '36kr' | 'ithome' | 'juejin' | 'csdn' | 'sspai' | 'v2ex' | 'acfun' | 'kuaishou' | 'hupu' | 'thepaper' | 'sina' | 'huxiu' | 'history'
 /** 热搜数据源：auto=优先 apizero 失败/串台回退 uapis；apizero/uapis=仅用指定源 */
 export type HotlistProvider = 'auto' | 'apizero' | 'uapis'
@@ -310,7 +342,7 @@ export const workbenchApi = {
   biddingHits: (
     sources: BiddingSource[] = [],
     refresh = false,
-  ): Promise<{ items: BiddingHit[]; fetchedAt: string | null }> => {
+  ): Promise<BiddingResponse> => {
     const params = new URLSearchParams()
     if (sources.length) {
       params.set(
@@ -359,12 +391,16 @@ export const workbenchApi = {
     }
     if (refresh) params.set('refresh', '1')
     const qs = params.toString()
-    return apiGet<BiddingHit[]>(`/api/bidding${qs ? '?' + qs : ''}`)
+    return apiGet<BiddingResponse>(`/api/bidding${qs ? '?' + qs : ''}`)
   },
 
   // 自选股实时行情（codes 形如 ['sh600519','sz300750']）
   market: (codes: string[]): Promise<MarketItem[]> =>
     apiGet<MarketItem[]>(`/api/stock?codes=${codes.map(encodeURIComponent).join(',')}`),
+
+  // 新股申购日历（今日可申购 / 未来一周可申购 / 全部待申购）
+  ipo: (): Promise<{ today: IpoItem[]; week: IpoItem[]; all: IpoItem[]; error?: string }> =>
+    apiGet<{ today: IpoItem[]; week: IpoItem[]; all: IpoItem[]; error?: string }>('/api/ipo'),
 
   // 实时热搜榜单（后端代理 apizero / uapis 可切换，缓存跟随 interval；免密钥，填 uapisKey 走会员通道）
   // src 平台白名单见 HOTLIST_SRCS（value 即 uapis type）；limit 1~50；provider=auto|apizero|uapis
