@@ -1,0 +1,26 @@
+# EigerCore · 服务器部署参考（bind mount 版）
+# 适用：需将全部可变数据（DB / 会话密钥 / 上传图标）固定存放在宿主机指定目录的场景，
+#       例如 1Panel / 宝塔等面板服务器。与默认 docker-compose.yml（命名卷）二选一使用。
+# 使用：在服务器上 `docker compose -f docker-compose.server.yml up -d`
+#       （本文件名不会被 docker compose 自动识别，必须显式 -f 指定）
+# 说明：镜像默认 USE_SPA=1；如需可复现部署，把 image 改为 praming/eigercore:1.0.0。
+
+services:
+  eigercore:
+    image: praming/eigercore:latest
+    container_name: eigercore
+    restart: unless-stopped
+    pull_policy: always        # 启动即拉取 Docker Hub 最新镜像，无需 --build 与本地代码
+    ports:
+      - "5000:5000"
+      # 反代（Nginx/宝塔/1Panel）场景下建议仅暴露本机回环：
+      # - "127.0.0.1:5000:5000"
+    volumes:
+      # 宿主机目录 : 容器内 /app/instance（全部可变数据；修改为你服务器的实际路径）
+      - /opt/1panel/1panel/www/sites/work.gukong.net/index/data:/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
